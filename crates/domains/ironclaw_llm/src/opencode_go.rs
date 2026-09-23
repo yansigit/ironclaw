@@ -154,6 +154,58 @@ impl OpenCodeGoProvider {
             reason: error.to_string(),
         })
     }
+
+    async fn fetch_model_ids(&self) -> Result<Vec<String>, LlmError> {
+        if self.config.api_key.trim().is_empty() {
+            return Err(LlmError::AuthFailed {
+                provider: "opencode_go".to_string(),
+            });
+        }
+        let url = format!("{}/models", self.config.base_url.trim_end_matches('/'));
+        let response = self
+            .http
+            .get(url)
+            .bearer_auth(&self.config.api_key)
+            .header(SESSION_HEADER, session_header_value("ironclaw"))
+            .send()
+            .await
+            .map_err(|error| LlmError::RequestFailed {
+                provider: "opencode_go".to_string(),
+                reason: error.to_string(),
+            })?;
+        let status = response.status();
+        let text = response.text().await.map_err(|error| LlmError::RequestFailed {
+            provider: "opencode_go".to_string(),
+            reason: error.to_string(),
+        })?;
+        if !status.is_success() {
+            let mut reason = text;
+            reason.truncate(512);
+            return Err(LlmError::RequestFailed {
+                provider: "opencode_go".to_string(),
+                reason: format!("HTTP {status}: {reason}"),
+            });
+        }
+        let payload: serde_json::Value = serde_json::from_str(&text).map_err(|error| {
+            LlmError::RequestFailed {
+                provider: "opencode_go".to_string(),
+                reason: error.to_string(),
+            }
+        })?;
+        let Some(data) = payload["data"].as_array() else {
+            return Err(LlmError::RequestFailed {
+                provider: "opencode_go".to_string(),
+                reason: "response missing data array".to_string(),
+            });
+        };
+        let mut ids = Vec::new();
+        for entry in data {
+            if let Some(id) = entry["id"].as_str().filter(|id| !id.is_empty()) {
+                ids.push(id.to_string());
+            }
+        }
+        Ok(ids)
+    }
 }
 
 #[async_trait]
@@ -248,6 +300,10 @@ impl LlmProvider for OpenCodeGoProvider {
             reasoning_details: None,
         })
     }
+
+    async fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        self.fetch_model_ids().await
+    }
 }
 
 #[cfg(test)]
@@ -340,5 +396,48 @@ mod tests {
         assert_eq!(response.finish_reason, crate::provider::FinishReason::Stop);
         let raw = server.await.unwrap();
         assert!(raw.contains("x-opencode-session: ic_"));
+    }
+
+    #[tokio::test]
+    async fn list_models_gets_openai_data_with_session_header() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut buf = vec![0u8; 8192];
+            let n = socket.read(&mut buf).await.unwrap();
+            let request = String::from_utf8_lossy(&buf[..n]).to_string();
+            assert!(request.starts_with("GET /models HTTP/1.1"));
+            assert!(
+                request.contains("authorization: Bearer test-go-key")
+                    || request.contains("Authorization: Bearer test-go-key")
+            );
+            assert!(request.contains("x-opencode-session: ic_"));
+            let body = r#"{"data":[{"id":"kimi-k2.7-code"},{"id":""},{"id":"gpt-5.6-luna"}]}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+            request
+        });
+
+        let provider = OpenCodeGoProvider::new(
+            crate::config::OpenCodeGoConfig {
+                model: "kimi-k2.7-code".to_string(),
+                base_url: format!("http://{addr}"),
+                api_key: "test-go-key".to_string(),
+            },
+            5,
+        )
+        .unwrap();
+        let models = provider.list_models().await.unwrap();
+        assert_eq!(
+            models,
+            vec!["kimi-k2.7-code".to_string(), "gpt-5.6-luna".to_string()]
+        );
+        let _raw = server.await.unwrap();
     }
 }
