@@ -4751,6 +4751,7 @@ fn model_request(model_profile_id: ModelProfileId) -> HostManagedModelRequest {
         resolved_model_route: None,
         run_id: TurnRunId::new(),
         turn_id: TurnId::new(),
+        thread_id: None,
         tool_choice: None,
         response_format: None,
     }

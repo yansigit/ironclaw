@@ -457,7 +457,13 @@ where
                 request.messages,
             )?;
         completion.response_format = request.response_format.clone();
-        add_request_metadata(&mut completion, &model_profile_id, run_id, turn_id);
+        add_request_metadata(
+            &mut completion,
+            &model_profile_id,
+            run_id,
+            turn_id,
+            request.thread_id.as_ref(),
+        );
 
         let diagnostic_effective_model = replay_identity.provider_model_id.clone();
         let result = complete_model_request(
@@ -508,7 +514,13 @@ where
                 request.messages,
             )?;
         completion.response_format = request.response_format.clone();
-        add_request_metadata(&mut completion, &model_profile_id, run_id, turn_id);
+        add_request_metadata(
+            &mut completion,
+            &model_profile_id,
+            run_id,
+            turn_id,
+            request.thread_id.as_ref(),
+        );
 
         let diagnostic_effective_model = replay_identity.provider_model_id.clone();
         let result = complete_model_request(
@@ -559,7 +571,13 @@ where
                 request.messages,
             )?;
         completion.response_format = request.response_format.clone();
-        add_request_metadata(&mut completion, &model_profile_id, run_id, turn_id);
+        add_request_metadata(
+            &mut completion,
+            &model_profile_id,
+            run_id,
+            turn_id,
+            request.thread_id.as_ref(),
+        );
 
         let provider_turn_scope = format!(
             "run={run_id}\nturn={turn_id}\nmodel_call={}",
@@ -615,7 +633,13 @@ where
                 request.messages,
             )?;
         completion.response_format = request.response_format.clone();
-        add_request_metadata(&mut completion, &model_profile_id, run_id, turn_id);
+        add_request_metadata(
+            &mut completion,
+            &model_profile_id,
+            run_id,
+            turn_id,
+            request.thread_id.as_ref(),
+        );
 
         let provider_turn_scope = format!(
             "run={run_id}\nturn={turn_id}\nmodel_call={}",
@@ -796,7 +820,13 @@ where
                 request.messages,
             )?;
         completion.response_format = request.response_format.clone();
-        add_request_metadata(&mut completion, &model_profile_id, run_id, turn_id);
+        add_request_metadata(
+            &mut completion,
+            &model_profile_id,
+            run_id,
+            turn_id,
+            request.thread_id.as_ref(),
+        );
         add_route_metadata(&mut completion, &snapshot);
 
         let diagnostic_effective_model = replay_identity.provider_model_id.clone();
@@ -840,7 +870,13 @@ where
                 request.messages,
             )?;
         completion.response_format = request.response_format.clone();
-        add_request_metadata(&mut completion, &model_profile_id, run_id, turn_id);
+        add_request_metadata(
+            &mut completion,
+            &model_profile_id,
+            run_id,
+            turn_id,
+            request.thread_id.as_ref(),
+        );
         add_route_metadata(&mut completion, &snapshot);
 
         let diagnostic_effective_model = replay_identity.provider_model_id.clone();
@@ -884,7 +920,13 @@ where
                 request.messages,
             )?;
         completion.response_format = request.response_format.clone();
-        add_request_metadata(&mut completion, &model_profile_id, run_id, turn_id);
+        add_request_metadata(
+            &mut completion,
+            &model_profile_id,
+            run_id,
+            turn_id,
+            request.thread_id.as_ref(),
+        );
         add_route_metadata(&mut completion, &snapshot);
 
         let provider_turn_scope = format!(
@@ -933,7 +975,13 @@ where
                 request.messages,
             )?;
         completion.response_format = request.response_format.clone();
-        add_request_metadata(&mut completion, &model_profile_id, run_id, turn_id);
+        add_request_metadata(
+            &mut completion,
+            &model_profile_id,
+            run_id,
+            turn_id,
+            request.thread_id.as_ref(),
+        );
         add_route_metadata(&mut completion, &snapshot);
 
         let provider_turn_scope = format!(
@@ -981,6 +1029,7 @@ fn add_request_metadata(
     model_profile_id: &ModelProfileId,
     run_id: TurnRunId,
     turn_id: TurnId,
+    thread_id: Option<&ironclaw_host_api::ids::ThreadId>,
 ) {
     completion.metadata.insert(
         "model_profile_id".to_string(),
@@ -992,6 +1041,14 @@ fn add_request_metadata(
     completion
         .metadata
         .insert("run_id".to_string(), run_id.to_string());
+    if let Some(thread_id) = thread_id {
+        let session_id = thread_id.as_str();
+        if !session_id.is_empty() {
+            completion
+                .metadata
+                .insert("session_id".to_string(), session_id.to_string());
+        }
+    }
 }
 
 fn with_model_diagnostic_evidence(
@@ -1214,6 +1271,26 @@ mod phase_one_error_recovery_tests {
         assert!(detail.contains("provider failed at /tmp/{response}"));
         assert!(!detail.contains("secret-value"));
         assert!(detail.contains("[redacted]"));
+    }
+
+    #[test]
+    fn thread_id_becomes_session_metadata() {
+        use ironclaw_host_api::ids::ThreadId;
+
+        let mut completion = CompletionRequest::new(vec![]);
+        let thread_id = ThreadId::new("thread-a").expect("thread id");
+        add_request_metadata(
+            &mut completion,
+            &ironclaw_loop_contracts::ModelProfileId::new("interactive_model")
+                .expect("model profile id"),
+            TurnRunId::new(),
+            TurnId::new(),
+            Some(&thread_id),
+        );
+        assert_eq!(
+            completion.metadata.get("session_id").map(String::as_str),
+            Some("thread-a")
+        );
     }
 }
 
