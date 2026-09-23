@@ -266,7 +266,8 @@ fn create_registry_provider_inner(
         ProviderProtocol::Bedrock
         | ProviderProtocol::OpenAiCodex
         | ProviderProtocol::GeminiOauth
-        | ProviderProtocol::NearAi => Err(LlmError::RequestFailed {
+        | ProviderProtocol::NearAi
+        | ProviderProtocol::OpenCodeGo => Err(LlmError::RequestFailed {
             provider: config.provider_id.clone(),
             reason: format!(
                 "Provider '{}' uses a dedicated config slot on LlmConfig and \

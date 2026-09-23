@@ -109,6 +109,11 @@ pub enum ProviderProtocol {
     /// derivation `"near_ai"` is also accepted as an alias.
     #[serde(rename = "nearai", alias = "near_ai")]
     NearAi,
+    /// OpenCode Go subscription gateway. Chat Completions for catalog models,
+    /// except the four ids `wire_for_model` marks as Responses.
+    /// Reads its config from [`crate::config::LlmConfig::opencode_go`].
+    #[serde(rename = "opencode_go", alias = "open_code_go")]
+    OpenCodeGo,
 }
 
 impl ProviderProtocol {
@@ -122,7 +127,11 @@ impl ProviderProtocol {
     pub fn has_dedicated_config(self) -> bool {
         matches!(
             self,
-            Self::Bedrock | Self::OpenAiCodex | Self::GeminiOauth | Self::NearAi
+            Self::Bedrock
+                | Self::OpenAiCodex
+                | Self::GeminiOauth
+                | Self::NearAi
+                | Self::OpenCodeGo
         )
     }
 }
@@ -1264,6 +1273,25 @@ mod tests {
                 "{id} must appear in selectable() after Layer C"
             );
         }
+    }
+
+    #[test]
+    fn opencode_go_catalog_row_is_dedicated_and_key_backed() {
+        let registry = ProviderRegistry::new(builtin_provider_definitions());
+        let def = registry
+            .find("opencode_go")
+            .expect("opencode_go catalog row");
+        assert_eq!(def.protocol, ProviderProtocol::OpenCodeGo);
+        assert!(def.protocol.has_dedicated_config());
+        assert_eq!(
+            def.default_base_url.as_deref(),
+            Some("https://opencode.ai/zen/go/v1")
+        );
+        assert_eq!(def.api_key_env.as_deref(), Some("OPENCODE_API_KEY"));
+        assert!(def.api_key_required);
+        assert_eq!(def.model_env, "OPENCODE_GO_MODEL");
+        assert_eq!(def.default_model, "kimi-k2.7-code");
+        assert_eq!(def.base_url_env.as_deref(), Some("OPENCODE_GO_BASE_URL"));
     }
 
     #[test]
