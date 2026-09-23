@@ -231,10 +231,15 @@ pub fn build_llm_config_from_resolved_provider(
                 ));
             }
             ProviderProtocol::OpenCodeGo => {
+                let base_url = if dedicated.base_url.trim().is_empty() {
+                    None
+                } else {
+                    Some(dedicated.base_url.clone())
+                };
                 opencode_go = Some(OpenCodeGoConfig::build(
                     Some(dedicated.model.clone()),
-                    nonempty_env("OPENCODE_GO_BASE_URL"),
-                    nonempty_env("OPENCODE_API_KEY"),
+                    base_url,
+                    dedicated.api_key.clone(),
                 ));
             }
             ProviderProtocol::OpenAiCompletions
@@ -781,6 +786,8 @@ fn config_error_to_llm_error(provider: &'static str) -> impl FnOnce(LlmConfigErr
 
 #[cfg(test)]
 mod tests {
+    use secrecy::ExposeSecret as _;
+
     use super::*;
 
     const CHAIN_ENV_VARS: &[&str] = &[
@@ -917,8 +924,41 @@ mod tests {
         assert_eq!(config.backend, "opencode_go");
         assert_eq!(go.model, "glm-5.2");
         assert_eq!(go.base_url, "http://127.0.0.1:9/v1");
-        assert_eq!(go.api_key, "test-go-key");
+        assert_eq!(
+            go.api_key.as_ref().map(|key| key.expose_secret()),
+            Some("test-go-key")
+        );
         assert!(config.provider.is_none());
+    }
+
+    #[test]
+    fn opencode_go_selection_base_url_overrides_env() {
+        use secrecy::ExposeSecret as _;
+
+        let _env_lock = ironclaw_common::env_helpers::lock_env();
+        let env = EnvGuard::clear(&["OPENCODE_API_KEY", "OPENCODE_GO_BASE_URL"]);
+        env.set("OPENCODE_API_KEY", "env-go-key");
+        env.set("OPENCODE_GO_BASE_URL", "http://127.0.0.1:9/v1");
+        let all = ProviderRegistry::try_load_from_path(None).expect("builtin registry should load");
+        let def = all
+            .find("opencode_go")
+            .expect("opencode_go builtin")
+            .clone();
+        let registry = ProviderRegistry::new(vec![def]);
+        let selection = ProviderSelection {
+            provider_id: "opencode_go".to_string(),
+            api_key_env: None,
+            base_url: Some("https://override.example/v1".to_string()),
+            model: None,
+        };
+        let config =
+            resolve_llm_config_from_selection(selection, &registry).expect("opencode_go resolves");
+        let go = config.opencode_go.expect("dedicated slot");
+        assert_eq!(go.base_url, "https://override.example/v1");
+        assert_eq!(
+            go.api_key.as_ref().map(|key| key.expose_secret()),
+            Some("env-go-key")
+        );
     }
 
     #[test]

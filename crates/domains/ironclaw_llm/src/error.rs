@@ -144,11 +144,12 @@ pub(crate) enum ProductionModelAdapter {
     Bedrock,
     OpenAiCodex,
     CodexChatGpt,
+    OpenCodeGo,
 }
 
 impl ProductionModelAdapter {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 9] = [
         Self::Rig,
         Self::NearAiChat,
         Self::AnthropicOauth,
@@ -157,6 +158,7 @@ impl ProductionModelAdapter {
         Self::Bedrock,
         Self::OpenAiCodex,
         Self::CodexChatGpt,
+        Self::OpenCodeGo,
     ];
 
     pub(crate) const fn provider_id(self) -> &'static str {
@@ -169,6 +171,7 @@ impl ProductionModelAdapter {
             Self::Bedrock => "bedrock",
             Self::OpenAiCodex => "openai_codex",
             Self::CodexChatGpt => "codex_chatgpt",
+            Self::OpenCodeGo => "opencode_go",
         }
     }
 }

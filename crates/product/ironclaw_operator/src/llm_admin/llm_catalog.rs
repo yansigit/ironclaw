@@ -308,15 +308,13 @@ pub fn resolve_against_registry(
 /// with `api_key_required = false`, otherwise resolution fails closed on the
 /// missing env var before this injection runs.
 pub fn apply_stored_api_key(config: &mut ironclaw_llm::LlmConfig, key: secrecy::SecretString) {
-    use secrecy::ExposeSecret as _;
-
     if let Some(provider) = config.provider.as_mut() {
         provider.api_key = Some(key);
     } else if config.backend == "nearai" {
         config.nearai.api_key = Some(key);
     } else if config.backend == "opencode_go" {
         if let Some(opencode_go) = config.opencode_go.as_mut() {
-            opencode_go.api_key = key.expose_secret().to_string();
+            opencode_go.api_key = Some(key);
         }
     }
     // Dedicated codex/gemini/bedrock backends authenticate via OAuth/session or
@@ -1066,6 +1064,8 @@ mod tests {
 
     #[test]
     fn apply_stored_api_key_targets_opencode_go_dedicated_config() {
+        use secrecy::ExposeSecret as _;
+
         let registry = ProviderRegistry::new(vec![provider_with_protocol(
             "opencode_go",
             ProviderProtocol::OpenCodeGo,
@@ -1084,7 +1084,10 @@ mod tests {
                 .opencode_go
                 .as_ref()
                 .expect("opencode_go config")
-                .api_key,
+                .api_key
+                .as_ref()
+                .expect("stored key")
+                .expose_secret(),
             "sk-stored"
         );
     }

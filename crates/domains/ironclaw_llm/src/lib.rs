@@ -893,7 +893,12 @@ pub fn create_opencode_go_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProv
         .ok_or_else(|| LlmError::AuthFailed {
             provider: "opencode_go".to_string(),
         })?;
-    if go.api_key.trim().is_empty() {
+    if go
+        .api_key
+        .as_ref()
+        .map(|key| key.expose_secret().trim().is_empty())
+        .unwrap_or(true)
+    {
         return Err(LlmError::AuthFailed {
             provider: "opencode_go".to_string(),
         });

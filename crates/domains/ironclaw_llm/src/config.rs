@@ -219,14 +219,20 @@ impl OpenAiCodexConfig {
 pub struct OpenCodeGoConfig {
     pub model: String,
     pub base_url: String,
-    pub api_key: String,
+    pub api_key: Option<SecretString>,
 }
 
 impl OpenCodeGoConfig {
     pub const DEFAULT_BASE_URL: &'static str = "https://opencode.ai/zen/go/v1";
     pub const DEFAULT_MODEL: &'static str = "kimi-k2.7-code";
 
-    pub fn build(model: Option<String>, base_url: Option<String>, api_key: Option<String>) -> Self {
+    pub fn build(
+        model: Option<String>,
+        base_url: Option<String>,
+        api_key: Option<SecretString>,
+    ) -> Self {
+        use secrecy::ExposeSecret as _;
+
         let model = model
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| Self::DEFAULT_MODEL.to_string());
@@ -235,10 +241,11 @@ impl OpenCodeGoConfig {
             .unwrap_or_else(|| Self::DEFAULT_BASE_URL.to_string())
             .trim_end_matches('/')
             .to_string();
+        let api_key = api_key.filter(|key| !key.expose_secret().trim().is_empty());
         Self {
             model,
             base_url,
-            api_key: api_key.unwrap_or_default(),
+            api_key,
         }
     }
 }
