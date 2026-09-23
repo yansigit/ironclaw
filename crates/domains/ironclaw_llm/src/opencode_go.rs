@@ -440,4 +440,22 @@ mod tests {
         );
         let _raw = server.await.unwrap();
     }
+
+    #[tokio::test]
+    #[ignore = "calls OpenCode Go; requires OPENCODE_API_KEY"]
+    async fn live_kimi_smoke() {
+        let key = std::env::var("OPENCODE_API_KEY").expect("OPENCODE_API_KEY");
+        let provider = OpenCodeGoProvider::new(
+            crate::config::OpenCodeGoConfig::build(None, None, Some(key)),
+            60,
+        )
+        .unwrap();
+        let response = provider
+            .complete(crate::provider::CompletionRequest::new(vec![
+                crate::provider::ChatMessage::user("Reply with the single word pong"),
+            ]))
+            .await
+            .unwrap();
+        assert!(!response.content.trim().is_empty());
+    }
 }
