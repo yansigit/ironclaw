@@ -127,11 +127,7 @@ impl ProviderProtocol {
     pub fn has_dedicated_config(self) -> bool {
         matches!(
             self,
-            Self::Bedrock
-                | Self::OpenAiCodex
-                | Self::GeminiOauth
-                | Self::NearAi
-                | Self::OpenCodeGo
+            Self::Bedrock | Self::OpenAiCodex | Self::GeminiOauth | Self::NearAi | Self::OpenCodeGo
         )
     }
 }

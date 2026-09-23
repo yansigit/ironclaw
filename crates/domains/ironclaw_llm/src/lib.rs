@@ -886,9 +886,7 @@ fn sanitize_gemini_base_url(base_url: &str) -> String {
     trimmed.to_string()
 }
 
-pub fn create_opencode_go_provider(
-    config: &LlmConfig,
-) -> Result<Arc<dyn LlmProvider>, LlmError> {
+pub fn create_opencode_go_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>, LlmError> {
     let go = config
         .opencode_go
         .clone()

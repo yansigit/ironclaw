@@ -226,11 +226,7 @@ impl OpenCodeGoConfig {
     pub const DEFAULT_BASE_URL: &'static str = "https://opencode.ai/zen/go/v1";
     pub const DEFAULT_MODEL: &'static str = "kimi-k2.7-code";
 
-    pub fn build(
-        model: Option<String>,
-        base_url: Option<String>,
-        api_key: Option<String>,
-    ) -> Self {
+    pub fn build(model: Option<String>, base_url: Option<String>, api_key: Option<String>) -> Self {
         let model = model
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| Self::DEFAULT_MODEL.to_string());
@@ -511,6 +507,11 @@ impl LlmConfig {
                 .as_ref()
                 .map(|cfg| cfg.model.clone())
                 .unwrap_or_else(|| "gpt-5.5".to_string()),
+            "opencode_go" | "opencode-go" => self
+                .opencode_go
+                .as_ref()
+                .map(|cfg| cfg.model.clone())
+                .unwrap_or_else(|| OpenCodeGoConfig::DEFAULT_MODEL.to_string()),
             _ => self
                 .provider
                 .as_ref()
@@ -536,6 +537,9 @@ impl LlmConfig {
                 .openai_codex
                 .as_ref()
                 .map(|cfg| cfg.api_base_url.clone()),
+            "opencode_go" | "opencode-go" => {
+                self.opencode_go.as_ref().map(|cfg| cfg.base_url.clone())
+            }
             _ => self
                 .provider
                 .as_ref()
@@ -862,6 +866,27 @@ mod tests {
 
         let cfg_no_codex_config = base_llm_config("codex");
         assert_eq!(cfg_no_codex_config.active_base_url(), None);
+
+        for alias in ["opencode_go", "opencode-go"] {
+            let mut cfg = base_llm_config(alias);
+            cfg.opencode_go = Some(OpenCodeGoConfig::build(
+                Some("glm-5.2".to_string()),
+                Some("http://127.0.0.1:9/v1".to_string()),
+                None,
+            ));
+            assert_eq!(cfg.active_model_name(), "glm-5.2");
+            assert_eq!(
+                cfg.active_base_url().as_deref(),
+                Some("http://127.0.0.1:9/v1")
+            );
+        }
+
+        let cfg_no_opencode = base_llm_config("opencode_go");
+        assert_eq!(
+            cfg_no_opencode.active_model_name(),
+            OpenCodeGoConfig::DEFAULT_MODEL
+        );
+        assert_eq!(cfg_no_opencode.active_base_url(), None);
 
         let mut cfg = base_llm_config("openai");
         cfg.provider = Some(RegistryProviderConfig::generic(

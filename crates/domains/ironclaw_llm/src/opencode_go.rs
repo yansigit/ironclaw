@@ -7,8 +7,8 @@ use sha2::{Digest, Sha256};
 use crate::config::OpenCodeGoConfig;
 use crate::error::LlmError;
 use crate::provider::{
-    map_provider_finish_token, ChatMessage, CompletionRequest, CompletionResponse, FinishReason,
-    LlmProvider, Role, ToolCall, ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
+    ChatMessage, CompletionRequest, CompletionResponse, FinishReason, LlmProvider, Role, ToolCall,
+    ToolCompletionRequest, ToolCompletionResponse, ToolDefinition, map_provider_finish_token,
 };
 
 pub const SESSION_HEADER: &str = "x-opencode-session";
@@ -78,7 +78,12 @@ impl OpenCodeGoProvider {
         value
     }
 
-    fn body(&self, model: &str, messages: &[ChatMessage], tools: &[ToolDefinition]) -> serde_json::Value {
+    fn body(
+        &self,
+        model: &str,
+        messages: &[ChatMessage],
+        tools: &[ToolDefinition],
+    ) -> serde_json::Value {
         let mut body = serde_json::json!({
             "model": model,
             "messages": messages.iter().map(Self::message_json).collect::<Vec<_>>(),
@@ -123,7 +128,10 @@ impl OpenCodeGoProvider {
                 ),
             });
         }
-        let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/chat/completions",
+            self.config.base_url.trim_end_matches('/')
+        );
         let response = self
             .http
             .post(url)
@@ -137,13 +145,15 @@ impl OpenCodeGoProvider {
                 reason: error.to_string(),
             })?;
         let status = response.status();
-        let text = response.text().await.map_err(|error| LlmError::RequestFailed {
-            provider: "opencode_go".to_string(),
-            reason: error.to_string(),
-        })?;
+        let text = response
+            .text()
+            .await
+            .map_err(|error| LlmError::RequestFailed {
+                provider: "opencode_go".to_string(),
+                reason: error.to_string(),
+            })?;
         if !status.is_success() {
-            let mut reason = text;
-            reason.truncate(512);
+            let reason = ironclaw_common::truncate_for_preview(&text, 512);
             return Err(LlmError::RequestFailed {
                 provider: "opencode_go".to_string(),
                 reason: format!("HTTP {status}: {reason}"),
@@ -174,24 +184,25 @@ impl OpenCodeGoProvider {
                 reason: error.to_string(),
             })?;
         let status = response.status();
-        let text = response.text().await.map_err(|error| LlmError::RequestFailed {
-            provider: "opencode_go".to_string(),
-            reason: error.to_string(),
-        })?;
+        let text = response
+            .text()
+            .await
+            .map_err(|error| LlmError::RequestFailed {
+                provider: "opencode_go".to_string(),
+                reason: error.to_string(),
+            })?;
         if !status.is_success() {
-            let mut reason = text;
-            reason.truncate(512);
+            let reason = ironclaw_common::truncate_for_preview(&text, 512);
             return Err(LlmError::RequestFailed {
                 provider: "opencode_go".to_string(),
                 reason: format!("HTTP {status}: {reason}"),
             });
         }
-        let payload: serde_json::Value = serde_json::from_str(&text).map_err(|error| {
-            LlmError::RequestFailed {
+        let payload: serde_json::Value =
+            serde_json::from_str(&text).map_err(|error| LlmError::RequestFailed {
                 provider: "opencode_go".to_string(),
                 reason: error.to_string(),
-            }
-        })?;
+            })?;
         let Some(data) = payload["data"].as_array() else {
             return Err(LlmError::RequestFailed {
                 provider: "opencode_go".to_string(),
@@ -228,10 +239,18 @@ impl LlmProvider for OpenCodeGoProvider {
             .clone()
             .unwrap_or_else(|| self.config.model.clone());
         let payload = self
-            .post_chat(&model, &request.messages, &[], &self.lane_from_metadata(&request.metadata))
+            .post_chat(
+                &model,
+                &request.messages,
+                &[],
+                &self.lane_from_metadata(&request.metadata),
+            )
             .await?;
         let choice = &payload["choices"][0];
-        let content = choice["message"]["content"].as_str().unwrap_or("").to_string();
+        let content = choice["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
         let finish_reason = choice["finish_reason"]
             .as_str()
             .and_then(map_provider_finish_token)
@@ -270,10 +289,11 @@ impl LlmProvider for OpenCodeGoProvider {
             for call in calls {
                 let name = call["function"]["name"].as_str().unwrap_or("").to_string();
                 let raw_args = call["function"]["arguments"].as_str().unwrap_or("{}");
-                let (arguments, arguments_parse_error) = match serde_json::from_str::<serde_json::Value>(raw_args) {
-                    Ok(value) => (value, None),
-                    Err(error) => (serde_json::json!({}), Some(error.to_string())),
-                };
+                let (arguments, arguments_parse_error) =
+                    match serde_json::from_str::<serde_json::Value>(raw_args) {
+                        Ok(value) => (value, None),
+                        Err(error) => (serde_json::json!({}), Some(error.to_string())),
+                    };
                 tool_calls.push(ToolCall {
                     id: call["id"].as_str().unwrap_or("").to_string(),
                     name,
@@ -362,7 +382,10 @@ mod tests {
             let n = socket.read(&mut buf).await.unwrap();
             let request = String::from_utf8_lossy(&buf[..n]).to_string();
             assert!(request.starts_with("POST /chat/completions HTTP/1.1"));
-            assert!(request.contains("authorization: Bearer test-go-key") || request.contains("Authorization: Bearer test-go-key"));
+            assert!(
+                request.contains("authorization: Bearer test-go-key")
+                    || request.contains("Authorization: Bearer test-go-key")
+            );
             assert!(request.contains("x-opencode-session: "));
             assert!(request.contains("\"model\":\"kimi-k2.7-code\""));
             let body = "{\"choices\":[{\"message\":{\"content\":\"pong\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1}}";
