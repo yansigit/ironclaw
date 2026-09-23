@@ -29,6 +29,7 @@ pub mod host;
 pub mod nearai_chat;
 pub mod openai_codex_provider;
 pub(crate) mod openai_codex_session;
+mod opencode_go;
 mod provider;
 mod reasoning;
 pub mod recording;
