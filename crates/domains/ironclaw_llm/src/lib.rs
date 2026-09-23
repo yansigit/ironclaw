@@ -162,6 +162,15 @@ pub async fn create_llm_provider(
         });
     }
 
+    if config.backend == "opencode_go" {
+        return Err(LlmError::RequestFailed {
+            provider: "opencode_go".to_string(),
+            reason:
+                "OpenCode Go uses a dedicated factory path. Use build_provider_chain() instead of create_llm_provider()."
+                    .to_string(),
+        });
+    }
+
     let reg_config = config
         .provider
         .as_ref()
@@ -877,6 +886,26 @@ fn sanitize_gemini_base_url(base_url: &str) -> String {
     trimmed.to_string()
 }
 
+pub fn create_opencode_go_provider(
+    config: &LlmConfig,
+) -> Result<Arc<dyn LlmProvider>, LlmError> {
+    let go = config
+        .opencode_go
+        .clone()
+        .ok_or_else(|| LlmError::AuthFailed {
+            provider: "opencode_go".to_string(),
+        })?;
+    if go.api_key.trim().is_empty() {
+        return Err(LlmError::AuthFailed {
+            provider: "opencode_go".to_string(),
+        });
+    }
+    Ok(Arc::new(opencode_go::OpenCodeGoProvider::new(
+        go,
+        config.request_timeout_secs,
+    )?))
+}
+
 /// Create an OpenAI Codex provider with OAuth authentication.
 ///
 /// This is async because it needs to ensure authentication before
@@ -1192,6 +1221,8 @@ async fn build_provider_chain_components_with_options(
 ) -> Result<ProviderChainComponents, LlmError> {
     let llm: Arc<dyn LlmProvider> = if config.backend == "openai_codex" {
         create_openai_codex_provider(config).await?
+    } else if config.backend == "opencode_go" {
+        create_opencode_go_provider(config)?
     } else {
         create_llm_provider(config, session.clone()).await?
     };
