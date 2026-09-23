@@ -214,6 +214,39 @@ impl OpenAiCodexConfig {
     }
 }
 
+/// Configuration for OpenCode Go (subscription-backed Zen API).
+#[derive(Debug, Clone)]
+pub struct OpenCodeGoConfig {
+    pub model: String,
+    pub base_url: String,
+    pub api_key: String,
+}
+
+impl OpenCodeGoConfig {
+    pub const DEFAULT_BASE_URL: &'static str = "https://opencode.ai/zen/go/v1";
+    pub const DEFAULT_MODEL: &'static str = "kimi-k2.7-code";
+
+    pub fn build(
+        model: Option<String>,
+        base_url: Option<String>,
+        api_key: Option<String>,
+    ) -> Self {
+        let model = model
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| Self::DEFAULT_MODEL.to_string());
+        let base_url = base_url
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| Self::DEFAULT_BASE_URL.to_string())
+            .trim_end_matches('/')
+            .to_string();
+        Self {
+            model,
+            base_url,
+            api_key: api_key.unwrap_or_default(),
+        }
+    }
+}
+
 /// Configuration for AWS Bedrock (native Converse API).
 #[derive(Debug, Clone)]
 pub struct BedrockConfig {
@@ -358,6 +391,8 @@ pub struct LlmConfig {
     pub gemini_oauth: Option<GeminiOauthConfig>,
     /// OpenAI Codex config (populated when backend=openai_codex).
     pub openai_codex: Option<OpenAiCodexConfig>,
+    /// OpenCode Go config (populated when backend=opencode_go).
+    pub opencode_go: Option<OpenCodeGoConfig>,
     /// HTTP request timeout in seconds for LLM API calls.
     /// Default: `DEFAULT_REQUEST_TIMEOUT_SECS` (60). For streaming providers,
     /// this bounds response headers and idle time before semantic progress;
@@ -398,6 +433,7 @@ pub enum LlmBackendKind {
     Bedrock,
     GeminiOauth,
     OpenAiCodex,
+    OpenCodeGo,
     Registry(String),
 }
 
@@ -408,6 +444,7 @@ impl LlmBackendKind {
             "bedrock" | "aws_bedrock" | "aws" => Self::Bedrock,
             "gemini_oauth" | "gemini-oauth" => Self::GeminiOauth,
             "openai_codex" | "openai-codex" | "codex" => Self::OpenAiCodex,
+            "opencode_go" | "opencode-go" => Self::OpenCodeGo,
             other => Self::Registry(other.to_string()),
         }
     }
@@ -418,6 +455,7 @@ impl LlmBackendKind {
             Self::Bedrock => "bedrock".to_string(),
             Self::GeminiOauth => "gemini_oauth".to_string(),
             Self::OpenAiCodex => "openai_codex".to_string(),
+            Self::OpenCodeGo => "opencode_go".to_string(),
             Self::Registry(backend) => registry_provider
                 .map(|provider| provider.provider_id.clone())
                 .unwrap_or_else(|| backend.clone()),
@@ -768,6 +806,7 @@ mod tests {
             bedrock: None,
             gemini_oauth: None,
             openai_codex: None,
+            opencode_go: None,
             request_timeout_secs: DEFAULT_REQUEST_TIMEOUT_SECS,
             cheap_model: None,
             smart_routing_cascade: true,

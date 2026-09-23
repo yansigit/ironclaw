@@ -66,7 +66,7 @@ pub mod vision_models;
 pub use circuit_breaker::{CircuitBreakerConfig, CircuitBreakerProvider};
 pub use config::{
     BedrockConfig, CacheRetention, GeminiOauthConfig, LlmBackendKind, LlmConfig, NearAiConfig,
-    OAUTH_PLACEHOLDER, OpenAiCodexConfig, RegistryProviderConfig,
+    OAUTH_PLACEHOLDER, OpenAiCodexConfig, OpenCodeGoConfig, RegistryProviderConfig,
 };
 pub use error::{LlmConfigError, LlmError, UNCONFIGURED_PROVIDER_ID};
 pub use failover::{CooldownConfig, FailoverProvider};
@@ -1491,6 +1491,7 @@ mod tests {
             cheap_model: None,
             smart_routing_cascade: true,
             openai_codex: None,
+            opencode_go: None,
             max_retries: 3,
             circuit_breaker_threshold: None,
             circuit_breaker_recovery_secs: 30,

@@ -233,6 +233,7 @@ fn nearai_config(model: &str) -> LlmConfig {
         bedrock: None,
         gemini_oauth: None,
         openai_codex: None,
+        opencode_go: None,
         request_timeout_secs: 120,
         cheap_model: None,
         smart_routing_cascade: true,

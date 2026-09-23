@@ -12,7 +12,7 @@ use secrecy::SecretString;
 use crate::auth::{self, CredentialSource};
 use crate::config::{
     BedrockConfig, CacheRetention, GeminiOauthConfig, LlmConfig, NearAiConfig, OAUTH_PLACEHOLDER,
-    OpenAiCodexConfig, RegistryProviderConfig,
+    OpenAiCodexConfig, OpenCodeGoConfig, RegistryProviderConfig,
 };
 use crate::error::{LlmConfigError, LlmError};
 use crate::registry::{ProviderDefinition, ProviderProtocol, ProviderRegistry};
@@ -193,6 +193,7 @@ pub fn build_llm_config_from_resolved_provider(
     let mut bedrock = None;
     let mut gemini_oauth = None;
     let mut openai_codex = None;
+    let mut opencode_go = None;
 
     match resolved {
         ResolvedProviderConfig::Registry(registry_config) => {
@@ -229,6 +230,13 @@ pub fn build_llm_config_from_resolved_provider(
                     parse_optional_u64("OPENAI_CODEX_REFRESH_MARGIN_SECS", "openai_codex")?,
                 ));
             }
+            ProviderProtocol::OpenCodeGo => {
+                opencode_go = Some(OpenCodeGoConfig::build(
+                    Some(dedicated.model.clone()),
+                    nonempty_env("OPENCODE_GO_BASE_URL"),
+                    nonempty_env("OPENCODE_API_KEY"),
+                ));
+            }
             ProviderProtocol::OpenAiCompletions
             | ProviderProtocol::Anthropic
             | ProviderProtocol::Ollama
@@ -252,6 +260,7 @@ pub fn build_llm_config_from_resolved_provider(
         bedrock,
         gemini_oauth,
         openai_codex,
+        opencode_go,
         request_timeout_secs: chain.request_timeout_secs,
         cheap_model: chain.cheap_model,
         smart_routing_cascade: chain.smart_routing_cascade,
@@ -882,6 +891,44 @@ mod tests {
 
         assert!(!config.smart_routing_cascade);
         assert!(config.response_cache_enabled);
+    }
+
+    #[test]
+    fn opencode_go_selection_fills_dedicated_config() {
+        let prior_key = std::env::var("OPENCODE_API_KEY").ok();
+        let prior_url = std::env::var("OPENCODE_GO_BASE_URL").ok();
+        unsafe {
+            std::env::set_var("OPENCODE_API_KEY", "test-go-key");
+            std::env::set_var("OPENCODE_GO_BASE_URL", "http://127.0.0.1:9/v1");
+        }
+        let all = ProviderRegistry::try_load_from_path(None)
+            .expect("builtin registry should load");
+        let def = all.find("opencode_go").expect("opencode_go builtin").clone();
+        let registry = ProviderRegistry::new(vec![def]);
+        let selection = ProviderSelection {
+            provider_id: "opencode_go".to_string(),
+            api_key_env: None,
+            base_url: None,
+            model: Some("glm-5.2".to_string()),
+        };
+        let config = resolve_llm_config_from_selection(selection, &registry)
+            .expect("opencode_go resolves");
+        let go = config.opencode_go.expect("dedicated slot");
+        assert_eq!(config.backend, "opencode_go");
+        assert_eq!(go.model, "glm-5.2");
+        assert_eq!(go.base_url, "http://127.0.0.1:9/v1");
+        assert_eq!(go.api_key, "test-go-key");
+        assert!(config.provider.is_none());
+        unsafe {
+            match prior_key {
+                Some(value) => std::env::set_var("OPENCODE_API_KEY", value),
+                None => std::env::remove_var("OPENCODE_API_KEY"),
+            }
+            match prior_url {
+                Some(value) => std::env::set_var("OPENCODE_GO_BASE_URL", value),
+                None => std::env::remove_var("OPENCODE_GO_BASE_URL"),
+            }
+        }
     }
 
     #[test]

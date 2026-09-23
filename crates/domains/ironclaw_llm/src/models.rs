@@ -412,6 +412,7 @@ pub fn build_nearai_model_fetch_config() -> crate::config::LlmConfig {
         cheap_model: None,
         smart_routing_cascade: false,
         openai_codex: None,
+        opencode_go: None,
         max_retries: 3,
         circuit_breaker_threshold: None,
         circuit_breaker_recovery_secs: 30,
