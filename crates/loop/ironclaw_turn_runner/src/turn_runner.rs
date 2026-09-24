@@ -17,7 +17,9 @@ use ironclaw_turns::{SanitizedFailure, runner::ClaimedTurnRun};
 use ironclaw_host_api::failure::categories::{
     BUDGET_ACCOUNTING_FAILED_CATEGORY, CHECKPOINT_REJECTED_CATEGORY,
     MODEL_CREDENTIALS_UNAVAILABLE_CATEGORY, MODEL_CREDITS_EXHAUSTED_CATEGORY,
-    MODEL_SPEND_BUDGET_EXHAUSTED_CATEGORY, TRANSCRIPT_WRITE_FAILED_CATEGORY,
+    MODEL_SPEND_BUDGET_EXHAUSTED_CATEGORY, MODEL_STAGE_POLICY_DENIED_CATEGORY,
+    MODEL_STAGE_REQUEST_INVALID_CATEGORY, MODEL_STAGE_SCOPE_MISMATCH_CATEGORY,
+    TRANSCRIPT_WRITE_FAILED_CATEGORY,
 };
 
 /// Create a `SanitizedFailure` from a known-valid static category.
@@ -57,6 +59,9 @@ pub(crate) fn sanitized_driver_failure(
             | BUDGET_ACCOUNTING_FAILED_CATEGORY
             | TRANSCRIPT_WRITE_FAILED_CATEGORY
             | CHECKPOINT_REJECTED_CATEGORY
+            | MODEL_STAGE_REQUEST_INVALID_CATEGORY
+            | MODEL_STAGE_POLICY_DENIED_CATEGORY
+            | MODEL_STAGE_SCOPE_MISMATCH_CATEGORY
             | "model_context_overflow"
             | "model_output_truncated"
             | "interrupted_unexpectedly"
@@ -127,7 +132,8 @@ mod tests {
     use super::sanitized_driver_failure;
     use ironclaw_host_api::failure::categories::{
         BUDGET_ACCOUNTING_FAILED_CATEGORY, CHECKPOINT_REJECTED_CATEGORY,
-        MODEL_SPEND_BUDGET_EXHAUSTED_CATEGORY,
+        MODEL_SPEND_BUDGET_EXHAUSTED_CATEGORY, MODEL_STAGE_POLICY_DENIED_CATEGORY,
+        MODEL_STAGE_REQUEST_INVALID_CATEGORY, MODEL_STAGE_SCOPE_MISMATCH_CATEGORY,
     };
 
     #[test]
@@ -221,6 +227,21 @@ mod tests {
         for category in ["model_context_overflow", "model_output_truncated"] {
             let failure = sanitized_driver_failure(category, Some("bounded model failure"))
                 .expect("terminal model recovery category is valid");
+
+            assert_eq!(failure.category(), category);
+            assert_eq!(failure.detail(), Some("bounded model failure"));
+        }
+    }
+
+    #[test]
+    fn sanitized_driver_failure_preserves_permanent_model_stage_categories() {
+        for category in [
+            MODEL_STAGE_REQUEST_INVALID_CATEGORY,
+            MODEL_STAGE_POLICY_DENIED_CATEGORY,
+            MODEL_STAGE_SCOPE_MISMATCH_CATEGORY,
+        ] {
+            let failure = sanitized_driver_failure(category, Some("bounded model failure"))
+                .expect("permanent model stage category is valid");
 
             assert_eq!(failure.category(), category);
             assert_eq!(failure.detail(), Some("bounded model failure"));
