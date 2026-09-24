@@ -596,28 +596,32 @@ fn json_string_escape(s: &str) -> String {
     serde_json::Value::String(s.to_string()).to_string()
 }
 
+pub(crate) fn protobuf_string_path(payload: &[u8], path: &[u32]) -> Option<String> {
+    let mut cur = payload;
+    for (i, &field_num) in path.iter().enumerate() {
+        let is_last = i == path.len() - 1;
+        let mut found = None;
+        for (f, wire, value) in parse_fields(cur) {
+            if f == field_num && wire == 2 {
+                found = Some(value);
+                break;
+            }
+        }
+        let value = found?;
+        if is_last {
+            return Some(String::from_utf8_lossy(value).into_owned());
+        }
+        cur = value;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn protobuf_string_path(payload: &[u8], path: &[u32]) -> Option<String> {
-        let mut cur = payload;
-        for (i, &field_num) in path.iter().enumerate() {
-            let is_last = i == path.len() - 1;
-            let mut found = None;
-            for (f, wire, value) in parse_fields(cur) {
-                if f == field_num && wire == 2 {
-                    found = Some(value);
-                    break;
-                }
-            }
-            let value = found?;
-            if is_last {
-                return Some(String::from_utf8_lossy(value).into_owned());
-            }
-            cur = value;
-        }
-        None
+        super::protobuf_string_path(payload, path)
     }
 
     fn protobuf_message_path<'a>(payload: &'a [u8], path: &[u32]) -> Option<&'a [u8]> {

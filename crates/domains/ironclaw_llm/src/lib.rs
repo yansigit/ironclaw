@@ -19,6 +19,7 @@ mod bedrock;
 pub mod circuit_breaker;
 pub(crate) mod codex_auth;
 mod codex_chatgpt;
+mod cursor;
 mod cursor_auth;
 mod cursor_wire;
 pub mod config;
@@ -903,6 +904,10 @@ fn sanitize_gemini_base_url(base_url: &str) -> String {
     trimmed.to_string()
 }
 
+pub fn create_cursor_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>, LlmError> {
+    cursor::create_cursor_provider(config)
+}
+
 pub fn create_opencode_go_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>, LlmError> {
     let go = config
         .opencode_go
@@ -1246,6 +1251,8 @@ async fn build_provider_chain_components_with_options(
         create_openai_codex_provider(config).await?
     } else if config.backend == "opencode_go" {
         create_opencode_go_provider(config)?
+    } else if config.backend == "cursor" {
+        create_cursor_provider(config)?
     } else {
         create_llm_provider(config, session.clone()).await?
     };
