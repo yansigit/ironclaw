@@ -1079,11 +1079,18 @@ fn add_request_metadata(
     // Absent (legacy replay wire shapes with no `thread_id`) rather than
     // falling back to `run_id` — a per-run key would fragment the OpenAI
     // prompt cache across a conversation's turns instead of reusing it.
+    // The same thread id is also the OpenCode Go session lane (`session_id`).
     if let Some(thread_id) = thread_id {
         completion.metadata.insert(
             ironclaw_llm::PROMPT_CACHE_KEY_METADATA.to_string(),
             derive_prompt_cache_key(thread_id),
         );
+        let session_id = thread_id.as_str();
+        if !session_id.is_empty() {
+            completion
+                .metadata
+                .insert("session_id".to_string(), session_id.to_string());
+        }
     }
 }
 
@@ -1307,6 +1314,26 @@ mod phase_one_error_recovery_tests {
         assert!(detail.contains("provider failed at /tmp/{response}"));
         assert!(!detail.contains("secret-value"));
         assert!(detail.contains("[redacted]"));
+    }
+
+    #[test]
+    fn thread_id_becomes_session_metadata() {
+        use ironclaw_host_api::ids::ThreadId;
+
+        let mut completion = CompletionRequest::new(vec![]);
+        let thread_id = ThreadId::new("thread-a").expect("thread id");
+        add_request_metadata(
+            &mut completion,
+            &ironclaw_loop_contracts::ModelProfileId::new("interactive_model")
+                .expect("model profile id"),
+            TurnRunId::new(),
+            TurnId::new(),
+            Some(&thread_id),
+        );
+        assert_eq!(
+            completion.metadata.get("session_id").map(String::as_str),
+            Some("thread-a")
+        );
     }
 }
 

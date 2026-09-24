@@ -730,6 +730,121 @@ async fn product_event_stream_pins_transcript_failure_before_explainer() {
 }
 
 #[tokio::test]
+async fn product_event_stream_projects_opencode_global_regions_without_explainer() {
+    const EXPECTED: &str = "This OpenCode Go model requires Global regions. In the OpenCode workspace Privacy settings, select Global, then try again.";
+    const LIVE_DETAIL: &str = "Provider opencode_go rejected the request: HTTP 400: {\"error\":{\"type\":\"server_error\",\"message\":\"Upstream request failed: This Go model requires Global regions. Select Global in your workspace's Privacy settings to use it.\"}}";
+    let calls = Arc::new(AtomicUsize::new(0));
+    let explainer = Some(Arc::new(CountingFailureExplainer {
+        explanation: "SENTINEL model explanation must not be used".to_string(),
+        calls: Arc::clone(&calls),
+    }));
+
+    for (thread_id, status, kind, coordinator_status) in [
+        (
+            "webui-events-opencode-global-failed-thread",
+            TurnStatus::Failed,
+            TurnEventKind::Failed,
+            TurnStatus::Failed,
+        ),
+        (
+            "webui-events-opencode-global-recovery-thread",
+            TurnStatus::RecoveryRequired,
+            TurnEventKind::RecoveryRequired,
+            TurnStatus::RecoveryRequired,
+        ),
+    ] {
+        let tenant_id = TenantId::new("webui-events-tenant").unwrap();
+        let user_id = UserId::new("webui-events-user").unwrap();
+        let agent_id = AgentId::new("webui-events-agent").unwrap();
+        let thread_id = ThreadId::new(thread_id).unwrap();
+        let turn_run = TurnRunId::new();
+        let scope = TurnScope::new(
+            tenant_id.clone(),
+            Some(agent_id.clone()),
+            None,
+            thread_id.clone(),
+        );
+        let event_log_dyn: Arc<dyn DurableEventLog> = Arc::new(InMemoryDurableEventLog::new());
+        let actor = TurnActor::new(user_id.clone());
+        let base_state = turn_run_state(&scope, &user_id, turn_run, TurnEventCursor(1));
+        let services = build_reborn_projection_services(
+            event_log_dyn,
+            ReplyTargetBindingRef::new("webui-events-reply").unwrap(),
+        )
+        .with_turn_events(
+            Arc::new(FakeTurnEventSource {
+                events: vec![TurnLifecycleEvent {
+                    cursor: TurnEventCursor(1),
+                    scope: scope.clone(),
+                    occurred_at: Some(chrono::Utc::now()),
+                    owner_user_id: Some(user_id.clone()),
+                    run_id: turn_run,
+                    status,
+                    kind,
+                    blocked_gate: None,
+                    sanitized_reason: Some("driver_failed".to_string()),
+                    retryable: None,
+                    detail: Some(LIVE_DETAIL.to_string()),
+                }],
+            }),
+            Arc::new(FakeTurnCoordinator {
+                state: TurnRunState {
+                    status: coordinator_status,
+                    blocked_activity_id: None,
+                    ..base_state
+                },
+            }),
+        )
+        .with_failure_explainer(explainer.clone().unwrap());
+
+        let events = services
+            .product_event_stream()
+            .drain(ProjectionSubscriptionRequest {
+                actor: actor.clone(),
+                scope: scope.clone(),
+                after_cursor: None,
+            })
+            .await
+            .unwrap();
+
+        let expected_status = match coordinator_status {
+            TurnStatus::Failed => "failed",
+            TurnStatus::RecoveryRequired => "recovery_required",
+            _ => unreachable!(),
+        };
+        assert!(
+            events.iter().any(|event| match event.payload() {
+                ProductOutboundPayload::ProjectionUpdate { state } => state.items.iter().any(
+                    |item| {
+                        matches!(
+                            item,
+                            ProductProjectionItem::RunStatus {
+                                run_id,
+                                status,
+                                failure_category: Some(category),
+                                failure_summary: Some(summary),
+                                ..
+                            } if *run_id == turn_run
+                                && status == expected_status
+                                && category.category() == "driver_failed"
+                                && summary == EXPECTED
+                        )
+                    }
+                ),
+                _ => false,
+            }),
+            "projection must surface the host-authored Global regions summary"
+        );
+    }
+
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "Global regions privacy failure is host-authored; projection must not call a model"
+    );
+}
+
+#[tokio::test]
 async fn product_event_stream_projects_checkpoint_rejection_without_model_explainer() {
     const FALLBACK: &str = "The host rejected a checkpoint, so the run stopped before continuing. No model or capability ran from the rejected state. Start a new run. If this repeats, ask an operator to inspect checkpoint storage and run-profile compatibility.";
     const VALID_DETAIL: &str = "The host rejected the pre-model checkpoint because checkpoint state write conflicted with current turn state. No model or capability ran after the rejection. Start a new run. If this repeats, ask an operator to inspect checkpoint storage and run-profile compatibility.";

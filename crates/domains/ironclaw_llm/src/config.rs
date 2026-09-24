@@ -218,6 +218,42 @@ impl OpenAiCodexConfig {
     }
 }
 
+/// Configuration for OpenCode Go (subscription-backed Zen API).
+#[derive(Debug, Clone)]
+pub struct OpenCodeGoConfig {
+    pub model: String,
+    pub base_url: String,
+    pub api_key: Option<SecretString>,
+}
+
+impl OpenCodeGoConfig {
+    pub const DEFAULT_BASE_URL: &'static str = "https://opencode.ai/zen/go/v1";
+    pub const DEFAULT_MODEL: &'static str = "kimi-k2.7-code";
+
+    pub fn build(
+        model: Option<String>,
+        base_url: Option<String>,
+        api_key: Option<SecretString>,
+    ) -> Self {
+        use secrecy::ExposeSecret as _;
+
+        let model = model
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| Self::DEFAULT_MODEL.to_string());
+        let base_url = base_url
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| Self::DEFAULT_BASE_URL.to_string())
+            .trim_end_matches('/')
+            .to_string();
+        let api_key = api_key.filter(|key| !key.expose_secret().trim().is_empty());
+        Self {
+            model,
+            base_url,
+            api_key,
+        }
+    }
+}
+
 /// Configuration for AWS Bedrock (native Converse API).
 #[derive(Debug, Clone)]
 pub struct BedrockConfig {
@@ -362,6 +398,8 @@ pub struct LlmConfig {
     pub gemini_oauth: Option<GeminiOauthConfig>,
     /// OpenAI Codex config (populated when backend=openai_codex).
     pub openai_codex: Option<OpenAiCodexConfig>,
+    /// OpenCode Go config (populated when backend=opencode_go).
+    pub opencode_go: Option<OpenCodeGoConfig>,
     /// HTTP request timeout in seconds for LLM API calls.
     /// Default: `DEFAULT_REQUEST_TIMEOUT_SECS` (60). For streaming providers,
     /// this bounds response headers and idle time before semantic progress;
@@ -402,6 +440,7 @@ pub enum LlmBackendKind {
     Bedrock,
     GeminiOauth,
     OpenAiCodex,
+    OpenCodeGo,
     Registry(String),
 }
 
@@ -412,6 +451,7 @@ impl LlmBackendKind {
             "bedrock" | "aws_bedrock" | "aws" => Self::Bedrock,
             "gemini_oauth" | "gemini-oauth" => Self::GeminiOauth,
             "openai_codex" | "openai-codex" | "codex" => Self::OpenAiCodex,
+            "opencode_go" | "opencode-go" => Self::OpenCodeGo,
             other => Self::Registry(other.to_string()),
         }
     }
@@ -422,6 +462,7 @@ impl LlmBackendKind {
             Self::Bedrock => "bedrock".to_string(),
             Self::GeminiOauth => "gemini_oauth".to_string(),
             Self::OpenAiCodex => "openai_codex".to_string(),
+            Self::OpenCodeGo => "opencode_go".to_string(),
             Self::Registry(backend) => registry_provider
                 .map(|provider| provider.provider_id.clone())
                 .unwrap_or_else(|| backend.clone()),
@@ -477,6 +518,11 @@ impl LlmConfig {
                 .as_ref()
                 .map(|cfg| cfg.model.clone())
                 .unwrap_or_else(|| "gpt-5.5".to_string()),
+            "opencode_go" | "opencode-go" => self
+                .opencode_go
+                .as_ref()
+                .map(|cfg| cfg.model.clone())
+                .unwrap_or_else(|| OpenCodeGoConfig::DEFAULT_MODEL.to_string()),
             _ => self
                 .provider
                 .as_ref()
@@ -502,6 +548,9 @@ impl LlmConfig {
                 .openai_codex
                 .as_ref()
                 .map(|cfg| cfg.api_base_url.clone()),
+            "opencode_go" | "opencode-go" => {
+                self.opencode_go.as_ref().map(|cfg| cfg.base_url.clone())
+            }
             _ => self
                 .provider
                 .as_ref()
@@ -778,6 +827,7 @@ mod tests {
             bedrock: None,
             gemini_oauth: None,
             openai_codex: None,
+            opencode_go: None,
             request_timeout_secs: DEFAULT_REQUEST_TIMEOUT_SECS,
             cheap_model: None,
             smart_routing_cascade: true,
@@ -833,6 +883,27 @@ mod tests {
 
         let cfg_no_codex_config = base_llm_config("codex");
         assert_eq!(cfg_no_codex_config.active_base_url(), None);
+
+        for alias in ["opencode_go", "opencode-go"] {
+            let mut cfg = base_llm_config(alias);
+            cfg.opencode_go = Some(OpenCodeGoConfig::build(
+                Some("glm-5.2".to_string()),
+                Some("http://127.0.0.1:9/v1".to_string()),
+                None,
+            ));
+            assert_eq!(cfg.active_model_name(), "glm-5.2");
+            assert_eq!(
+                cfg.active_base_url().as_deref(),
+                Some("http://127.0.0.1:9/v1")
+            );
+        }
+
+        let cfg_no_opencode = base_llm_config("opencode_go");
+        assert_eq!(
+            cfg_no_opencode.active_model_name(),
+            OpenCodeGoConfig::DEFAULT_MODEL
+        );
+        assert_eq!(cfg_no_opencode.active_base_url(), None);
 
         let mut cfg = base_llm_config("openai");
         cfg.provider = Some(RegistryProviderConfig::generic(

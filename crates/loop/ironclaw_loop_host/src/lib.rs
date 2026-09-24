@@ -2683,7 +2683,8 @@ pub struct HostManagedModelRequest {
     /// SHA-256 of this value and carries that through to the provider as
     /// request metadata (see `ironclaw_llm::PROMPT_CACHE_KEY_METADATA`) so
     /// OpenAI Responses-API providers can set a stable `prompt_cache_key`
-    /// that survives across a conversation's turns. `#[serde(default)]` so
+    /// that survives across a conversation's turns. The same value is also
+    /// copied to `session_id` for OpenCode Go. `#[serde(default)]` so
     /// wire shapes recorded before this field existed keep deserializing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thread_id: Option<ironclaw_host_api::ids::ThreadId>,

@@ -518,5 +518,24 @@
       "supports_cross_region": true,
       "supports_profile": true
     }
+  },
+  {
+    "id": "opencode_go",
+    "aliases": ["opencode-go"],
+    "protocol": "opencode_go",
+    "default_base_url": "https://opencode.ai/zen/go/v1",
+    "base_url_env": "OPENCODE_GO_BASE_URL",
+    "api_key_env": "OPENCODE_API_KEY",
+    "api_key_required": true,
+    "model_env": "OPENCODE_GO_MODEL",
+    "default_model": "kimi-k2.7-code",
+    "description": "OpenCode Go subscription (OpenAI chat completions; API key)",
+    "setup": {
+      "kind": "api_key",
+      "secret_name": "llm_opencode_go_api_key",
+      "key_url": "https://opencode.ai/auth",
+      "display_name": "OpenCode Go",
+      "can_list_models": true
+    }
   }
 ]

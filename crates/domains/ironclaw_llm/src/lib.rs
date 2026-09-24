@@ -29,6 +29,7 @@ pub mod host;
 pub mod nearai_chat;
 pub mod openai_codex_provider;
 pub(crate) mod openai_codex_session;
+mod opencode_go;
 mod provider;
 mod reasoning;
 pub mod recording;
@@ -66,7 +67,7 @@ pub mod vision_models;
 pub use circuit_breaker::{CircuitBreakerConfig, CircuitBreakerProvider};
 pub use config::{
     BedrockConfig, CacheRetention, GeminiOauthConfig, LlmBackendKind, LlmConfig, NearAiConfig,
-    OAUTH_PLACEHOLDER, OpenAiCodexConfig, RegistryProviderConfig,
+    OAUTH_PLACEHOLDER, OpenAiCodexConfig, OpenCodeGoConfig, RegistryProviderConfig,
 };
 pub use error::{LlmConfigError, LlmError, UNCONFIGURED_PROVIDER_ID};
 pub use failover::{CooldownConfig, FailoverProvider};
@@ -158,6 +159,15 @@ pub async fn create_llm_provider(
             provider: "openai_codex".to_string(),
             reason:
                 "OpenAI Codex uses a dedicated factory path. Use build_provider_chain() instead of create_llm_provider()."
+                    .to_string(),
+        });
+    }
+
+    if config.backend == "opencode_go" {
+        return Err(LlmError::RequestFailed {
+            provider: "opencode_go".to_string(),
+            reason:
+                "OpenCode Go uses a dedicated factory path. Use build_provider_chain() instead of create_llm_provider()."
                     .to_string(),
         });
     }
@@ -267,7 +277,8 @@ fn create_registry_provider_inner(
         ProviderProtocol::Bedrock
         | ProviderProtocol::OpenAiCodex
         | ProviderProtocol::GeminiOauth
-        | ProviderProtocol::NearAi => Err(LlmError::RequestFailed {
+        | ProviderProtocol::NearAi
+        | ProviderProtocol::OpenCodeGo => Err(LlmError::RequestFailed {
             provider: config.provider_id.clone(),
             reason: format!(
                 "Provider '{}' uses a dedicated config slot on LlmConfig and \
@@ -880,6 +891,29 @@ fn sanitize_gemini_base_url(base_url: &str) -> String {
     trimmed.to_string()
 }
 
+pub fn create_opencode_go_provider(config: &LlmConfig) -> Result<Arc<dyn LlmProvider>, LlmError> {
+    let go = config
+        .opencode_go
+        .clone()
+        .ok_or_else(|| LlmError::AuthFailed {
+            provider: "opencode_go".to_string(),
+        })?;
+    if go
+        .api_key
+        .as_ref()
+        .map(|key| key.expose_secret().trim().is_empty())
+        .unwrap_or(true)
+    {
+        return Err(LlmError::AuthFailed {
+            provider: "opencode_go".to_string(),
+        });
+    }
+    Ok(Arc::new(opencode_go::OpenCodeGoProvider::new(
+        go,
+        config.request_timeout_secs,
+    )?))
+}
+
 /// Create an OpenAI Codex provider with OAuth authentication.
 ///
 /// This is async because it needs to ensure authentication before
@@ -1198,6 +1232,8 @@ async fn build_provider_chain_components_with_options(
 ) -> Result<ProviderChainComponents, LlmError> {
     let llm: Arc<dyn LlmProvider> = if config.backend == "openai_codex" {
         create_openai_codex_provider(config).await?
+    } else if config.backend == "opencode_go" {
+        create_opencode_go_provider(config)?
     } else {
         create_llm_provider(config, session.clone()).await?
     };
@@ -1514,6 +1550,7 @@ mod tests {
             cheap_model: None,
             smart_routing_cascade: true,
             openai_codex: None,
+            opencode_go: None,
             max_retries: 3,
             circuit_breaker_threshold: None,
             circuit_breaker_recovery_secs: 30,

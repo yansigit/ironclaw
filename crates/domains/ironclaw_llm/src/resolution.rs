@@ -12,7 +12,7 @@ use secrecy::SecretString;
 use crate::auth::{self, CredentialSource};
 use crate::config::{
     BedrockConfig, CacheRetention, GeminiOauthConfig, LlmConfig, NearAiConfig, OAUTH_PLACEHOLDER,
-    OpenAiCodexConfig, RegistryProviderConfig,
+    OpenAiCodexConfig, OpenCodeGoConfig, RegistryProviderConfig,
 };
 use crate::error::{LlmConfigError, LlmError};
 use crate::registry::{ProviderDefinition, ProviderProtocol, ProviderRegistry};
@@ -200,6 +200,7 @@ pub fn build_llm_config_from_resolved_provider(
     let mut bedrock = None;
     let mut gemini_oauth = None;
     let mut openai_codex = None;
+    let mut opencode_go = None;
 
     match resolved {
         ResolvedProviderConfig::Registry(registry_config) => {
@@ -238,6 +239,18 @@ pub fn build_llm_config_from_resolved_provider(
                 config.unsupported_params = dedicated.unsupported_params;
                 openai_codex = Some(config);
             }
+            ProviderProtocol::OpenCodeGo => {
+                let base_url = if dedicated.base_url.trim().is_empty() {
+                    None
+                } else {
+                    Some(dedicated.base_url.clone())
+                };
+                opencode_go = Some(OpenCodeGoConfig::build(
+                    Some(dedicated.model.clone()),
+                    base_url,
+                    dedicated.api_key.clone(),
+                ));
+            }
             ProviderProtocol::OpenAiCompletions
             | ProviderProtocol::Anthropic
             | ProviderProtocol::Ollama
@@ -261,6 +274,7 @@ pub fn build_llm_config_from_resolved_provider(
         bedrock,
         gemini_oauth,
         openai_codex,
+        opencode_go,
         request_timeout_secs: chain.request_timeout_secs,
         cheap_model: chain.cheap_model,
         smart_routing_cascade: chain.smart_routing_cascade,
