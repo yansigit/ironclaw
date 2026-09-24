@@ -133,7 +133,7 @@ pub fn encode_agent_run(input: &AgentRunInput) -> EncodedRun {
         encode_string_field(4, &resolved_model),
     ]);
 
-    let mcp_tools = encode_message_field(1, &[]);
+    let mcp_tools = encode_message_field(4, &encode_message_field(1, &[]));
 
     let mut requested_model_msg = encode_string_field(1, &resolved_model);
     for (id, value) in &params {
@@ -620,6 +620,26 @@ mod tests {
         None
     }
 
+    fn protobuf_message_path<'a>(payload: &'a [u8], path: &[u32]) -> Option<&'a [u8]> {
+        let mut cur = payload;
+        for (i, &field_num) in path.iter().enumerate() {
+            let is_last = i == path.len() - 1;
+            let mut found = None;
+            for (f, wire, value) in parse_fields(cur) {
+                if f == field_num && wire == 2 {
+                    found = Some(value);
+                    break;
+                }
+            }
+            let value = found?;
+            if is_last {
+                return Some(value);
+            }
+            cur = value;
+        }
+        None
+    }
+
     #[test]
     fn composer_aliases_normalize() {
         assert_eq!(normalize_cursor_model_id("composer-2-5"), "composer-2.5");
@@ -653,6 +673,13 @@ mod tests {
         assert_eq!(text.as_deref(), Some("ping"));
         let model = protobuf_string_path(&frames[0], &[1, 9, 1]);
         assert_eq!(model.as_deref(), Some("composer-2.5"));
+        let mcp_tools = protobuf_message_path(&frames[0], &[1, 4]).expect("mcp_tools field 4");
+        assert!(
+            parse_fields(mcp_tools)
+                .iter()
+                .any(|(f, wire, _)| *f == 1 && *wire == 2),
+            "McpTools wrapper must contain inner field 1"
+        );
     }
 
     #[test]
