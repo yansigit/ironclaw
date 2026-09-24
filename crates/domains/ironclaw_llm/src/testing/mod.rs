@@ -48,6 +48,7 @@ pub fn nearai_test_config(model: impl Into<String>) -> crate::config::LlmConfig 
         smart_routing_cascade: true,
         openai_codex: None,
         opencode_go: None,
+        cursor: None,
         max_retries: 0,
         circuit_breaker_threshold: None,
         circuit_breaker_recovery_secs: 30,

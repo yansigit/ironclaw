@@ -254,6 +254,43 @@ impl OpenCodeGoConfig {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CursorConfig {
+    pub model: String,
+    pub base_url: String,
+    pub access_token: Option<SecretString>,
+    pub session_path: Option<std::path::PathBuf>,
+}
+
+impl CursorConfig {
+    pub const DEFAULT_BASE_URL: &'static str = "https://api2.cursor.sh";
+    pub const DEFAULT_MODEL: &'static str = "composer-2.5";
+
+    pub fn build(
+        model: Option<String>,
+        base_url: Option<String>,
+        access_token: Option<SecretString>,
+        session_path: Option<std::path::PathBuf>,
+    ) -> Self {
+        use secrecy::ExposeSecret as _;
+        let model = model
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| Self::DEFAULT_MODEL.to_string());
+        let base_url = base_url
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| Self::DEFAULT_BASE_URL.to_string())
+            .trim_end_matches('/')
+            .to_string();
+        let access_token = access_token.filter(|key| !key.expose_secret().trim().is_empty());
+        Self {
+            model,
+            base_url,
+            access_token,
+            session_path,
+        }
+    }
+}
+
 /// Configuration for AWS Bedrock (native Converse API).
 #[derive(Debug, Clone)]
 pub struct BedrockConfig {
@@ -400,6 +437,8 @@ pub struct LlmConfig {
     pub openai_codex: Option<OpenAiCodexConfig>,
     /// OpenCode Go config (populated when backend=opencode_go).
     pub opencode_go: Option<OpenCodeGoConfig>,
+    /// Cursor config (populated when backend=cursor).
+    pub cursor: Option<CursorConfig>,
     /// HTTP request timeout in seconds for LLM API calls.
     /// Default: `DEFAULT_REQUEST_TIMEOUT_SECS` (60). For streaming providers,
     /// this bounds response headers and idle time before semantic progress;
@@ -441,6 +480,7 @@ pub enum LlmBackendKind {
     GeminiOauth,
     OpenAiCodex,
     OpenCodeGo,
+    Cursor,
     Registry(String),
 }
 
@@ -452,6 +492,7 @@ impl LlmBackendKind {
             "gemini_oauth" | "gemini-oauth" => Self::GeminiOauth,
             "openai_codex" | "openai-codex" | "codex" => Self::OpenAiCodex,
             "opencode_go" | "opencode-go" => Self::OpenCodeGo,
+            "cursor" => Self::Cursor,
             other => Self::Registry(other.to_string()),
         }
     }
@@ -463,6 +504,7 @@ impl LlmBackendKind {
             Self::GeminiOauth => "gemini_oauth".to_string(),
             Self::OpenAiCodex => "openai_codex".to_string(),
             Self::OpenCodeGo => "opencode_go".to_string(),
+            Self::Cursor => "cursor".to_string(),
             Self::Registry(backend) => registry_provider
                 .map(|provider| provider.provider_id.clone())
                 .unwrap_or_else(|| backend.clone()),
@@ -523,6 +565,11 @@ impl LlmConfig {
                 .as_ref()
                 .map(|cfg| cfg.model.clone())
                 .unwrap_or_else(|| OpenCodeGoConfig::DEFAULT_MODEL.to_string()),
+            "cursor" => self
+                .cursor
+                .as_ref()
+                .map(|cfg| cfg.model.clone())
+                .unwrap_or_else(|| CursorConfig::DEFAULT_MODEL.to_string()),
             _ => self
                 .provider
                 .as_ref()
@@ -551,6 +598,7 @@ impl LlmConfig {
             "opencode_go" | "opencode-go" => {
                 self.opencode_go.as_ref().map(|cfg| cfg.base_url.clone())
             }
+            "cursor" => self.cursor.as_ref().map(|cfg| cfg.base_url.clone()),
             _ => self
                 .provider
                 .as_ref()
@@ -828,6 +876,7 @@ mod tests {
             gemini_oauth: None,
             openai_codex: None,
             opencode_go: None,
+            cursor: None,
             request_timeout_secs: DEFAULT_REQUEST_TIMEOUT_SECS,
             cheap_model: None,
             smart_routing_cascade: true,

@@ -373,6 +373,28 @@ fn opencode_go_selection_fills_dedicated_config() {
 }
 
 #[test]
+fn cursor_selection_fills_dedicated_config() {
+    let _env_lock = ironclaw_common::env_helpers::lock_env();
+    let _env = EnvGuard::clear(&["CURSOR_BASE_URL", "CURSOR_SESSION_PATH"]);
+    let all = ProviderRegistry::try_load_from_path(None).expect("builtin registry should load");
+    let def = all.find("cursor").expect("cursor builtin").clone();
+    let registry = ProviderRegistry::new(vec![def]);
+    let selection = ProviderSelection {
+        provider_id: "cursor".to_string(),
+        api_key_env: None,
+        base_url: None,
+        model: Some("composer-2.5".to_string()),
+    };
+    let config =
+        resolve_llm_config_from_selection(selection, &registry).expect("cursor resolves");
+    let cursor = config.cursor.expect("dedicated slot");
+    assert_eq!(config.backend, "cursor");
+    assert_eq!(cursor.model, "composer-2.5");
+    assert_eq!(cursor.base_url, "https://api2.cursor.sh");
+    assert!(cursor.access_token.is_none());
+}
+
+#[test]
 fn opencode_go_selection_base_url_overrides_env() {
     use secrecy::ExposeSecret as _;
 

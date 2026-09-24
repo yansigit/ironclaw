@@ -67,7 +67,7 @@ pub mod vision_models;
 pub use circuit_breaker::{CircuitBreakerConfig, CircuitBreakerProvider};
 pub use config::{
     BedrockConfig, CacheRetention, GeminiOauthConfig, LlmBackendKind, LlmConfig, NearAiConfig,
-    OAUTH_PLACEHOLDER, OpenAiCodexConfig, OpenCodeGoConfig, RegistryProviderConfig,
+    OAUTH_PLACEHOLDER, OpenAiCodexConfig, OpenCodeGoConfig, CursorConfig, RegistryProviderConfig,
 };
 pub use error::{LlmConfigError, LlmError, UNCONFIGURED_PROVIDER_ID};
 pub use failover::{CooldownConfig, FailoverProvider};
@@ -168,6 +168,15 @@ pub async fn create_llm_provider(
             provider: "opencode_go".to_string(),
             reason:
                 "OpenCode Go uses a dedicated factory path. Use build_provider_chain() instead of create_llm_provider()."
+                    .to_string(),
+        });
+    }
+
+    if config.backend == "cursor" {
+        return Err(LlmError::RequestFailed {
+            provider: "cursor".to_string(),
+            reason:
+                "Cursor uses a dedicated factory path. Use build_provider_chain() instead of create_llm_provider()."
                     .to_string(),
         });
     }
@@ -278,7 +287,8 @@ fn create_registry_provider_inner(
         | ProviderProtocol::OpenAiCodex
         | ProviderProtocol::GeminiOauth
         | ProviderProtocol::NearAi
-        | ProviderProtocol::OpenCodeGo => Err(LlmError::RequestFailed {
+        | ProviderProtocol::OpenCodeGo
+        | ProviderProtocol::Cursor => Err(LlmError::RequestFailed {
             provider: config.provider_id.clone(),
             reason: format!(
                 "Provider '{}' uses a dedicated config slot on LlmConfig and \
@@ -1551,6 +1561,7 @@ mod tests {
             smart_routing_cascade: true,
             openai_codex: None,
             opencode_go: None,
+            cursor: None,
             max_retries: 3,
             circuit_breaker_threshold: None,
             circuit_breaker_recovery_secs: 30,

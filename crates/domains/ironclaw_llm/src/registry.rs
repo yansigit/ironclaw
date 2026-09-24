@@ -114,6 +114,10 @@ pub enum ProviderProtocol {
     /// Reads its config from [`crate::config::LlmConfig::opencode_go`].
     #[serde(rename = "opencode_go", alias = "open_code_go")]
     OpenCodeGo,
+    /// Cursor subscription agent RPC (PKCE, Connect protobuf on api2.cursor.sh).
+    /// Reads its config from [`crate::config::LlmConfig::cursor`].
+    #[serde(rename = "cursor")]
+    Cursor,
 }
 
 impl ProviderProtocol {
@@ -128,6 +132,7 @@ impl ProviderProtocol {
         matches!(
             self,
             Self::Bedrock | Self::OpenAiCodex | Self::GeminiOauth | Self::NearAi | Self::OpenCodeGo
+                | Self::Cursor
         )
     }
 }
@@ -1304,6 +1309,29 @@ mod tests {
             result.is_err(),
             "a bogus parameter name must still be rejected"
         );
+    }
+
+    #[test]
+    fn cursor_catalog_row_is_dedicated_oauth() {
+        let registry = ProviderRegistry::new(builtin_provider_definitions());
+        let def = registry.find("cursor").expect("cursor catalog row");
+        assert_eq!(def.protocol, ProviderProtocol::Cursor);
+        assert!(def.protocol.has_dedicated_config());
+        assert_eq!(
+            def.default_base_url.as_deref(),
+            Some("https://api2.cursor.sh")
+        );
+        assert!(!def.api_key_required);
+        assert_eq!(def.model_env, "CURSOR_MODEL");
+        assert_eq!(def.default_model, "composer-2.5");
+        assert_eq!(def.base_url_env.as_deref(), Some("CURSOR_BASE_URL"));
+        match def.setup.as_ref() {
+            Some(SetupHint::OAuthDeviceCode { display_name, backend }) => {
+                assert_eq!(display_name, "Cursor");
+                assert_eq!(backend, "cursor");
+            }
+            other => panic!("expected oauth device setup, got {other:?}"),
+        }
     }
 
     #[test]

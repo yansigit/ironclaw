@@ -537,5 +537,21 @@
       "display_name": "OpenCode Go",
       "can_list_models": true
     }
+  },
+  {
+    "id": "cursor",
+    "aliases": ["cursor-agent"],
+    "protocol": "cursor",
+    "default_base_url": "https://api2.cursor.sh",
+    "base_url_env": "CURSOR_BASE_URL",
+    "api_key_required": false,
+    "model_env": "CURSOR_MODEL",
+    "default_model": "composer-2.5",
+    "description": "Cursor subscription (PKCE, AgentService Run)",
+    "setup": {
+      "kind": "o_auth_device_code",
+      "display_name": "Cursor",
+      "backend": "cursor"
+    }
   }
 ]
