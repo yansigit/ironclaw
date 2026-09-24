@@ -115,7 +115,7 @@ pub fn encode_agent_run(input: &AgentRunInput) -> EncodedRun {
         let state_inner = encode_bytes_field(1, &digest);
         encode_message_field(1, &state_inner)
     } else {
-        Vec::new()
+        encode_message_field(1, &[])
     };
 
     let user_message = concat_fields(&[
@@ -596,6 +596,39 @@ fn json_string_escape(s: &str) -> String {
     serde_json::Value::String(s.to_string()).to_string()
 }
 
+pub(crate) fn cursor_agent_origin_from_server_config(payload: &[u8]) -> Result<String, WireError> {
+    let inner = parse_fields(payload)
+        .into_iter()
+        .find_map(|(field, wire, value)| {
+            if field == 27 && wire == 2 {
+                Some(value)
+            } else {
+                None
+            }
+        })
+        .ok_or(WireError::Invalid)?;
+    let agent_url = protobuf_string_field(inner, 1).ok_or(WireError::Invalid)?;
+    validate_cursor_agent_origin(&agent_url)
+}
+
+fn validate_cursor_agent_origin(url_str: &str) -> Result<String, WireError> {
+    let parsed = url::Url::parse(url_str.trim()).map_err(|_| WireError::Invalid)?;
+    if parsed.scheme() != "https" {
+        return Err(WireError::Invalid);
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(WireError::Invalid);
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(WireError::Invalid);
+    }
+    let host = parsed.host_str().ok_or(WireError::Invalid)?;
+    if host != "api5.cursor.sh" && !host.ends_with(".api5.cursor.sh") {
+        return Err(WireError::Invalid);
+    }
+    Ok(parsed.origin().ascii_serialization())
+}
+
 pub(crate) fn protobuf_string_path(payload: &[u8], path: &[u32]) -> Option<String> {
     let mut cur = payload;
     for (i, &field_num) in path.iter().enumerate() {
@@ -717,6 +750,24 @@ mod tests {
                 working_dir,
             })) if exec_id == "e1" && command == "uname" && working_dir == "/tmp"
         ));
+    }
+
+    #[test]
+    fn server_config_agent_origin_from_field_27() {
+        let inner = concat_fields(&[
+            encode_string_field(1, "https://agent.api5.cursor.sh"),
+            encode_string_field(2, "https://agentn.api5.cursor.sh"),
+        ]);
+        let payload = encode_message_field(27, &inner);
+        let origin = cursor_agent_origin_from_server_config(&payload).expect("origin");
+        assert_eq!(origin, "https://agent.api5.cursor.sh");
+    }
+
+    #[test]
+    fn server_config_rejects_untrusted_agent_host() {
+        let inner = encode_string_field(1, "https://evil.example");
+        let payload = encode_message_field(27, &inner);
+        assert!(cursor_agent_origin_from_server_config(&payload).is_err());
     }
 
     #[test]

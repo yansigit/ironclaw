@@ -18,10 +18,10 @@ use uuid::Uuid;
 
 use crate::config::{CursorConfig, hardened_streaming_client_builder};
 use crate::cursor_wire::{
-    AgentRunInput, ExecEvent, KvEvent, ServerEvent, decode_connect_frames,
-    decode_server_payload, encode_agent_run, encode_exec_rejected, encode_kv_get_result,
-    encode_kv_set_result, encode_request_context_response, encode_shell_rejected,
-    visible_composer_text,
+    AgentRunInput, ExecEvent, KvEvent, ServerEvent, cursor_agent_origin_from_server_config,
+    decode_connect_frames, decode_server_payload, encode_agent_run, encode_exec_rejected,
+    encode_kv_get_result, encode_kv_set_result, encode_request_context_response,
+    encode_shell_rejected, visible_composer_text,
 };
 use crate::error::LlmError;
 use crate::provider::{
@@ -30,12 +30,14 @@ use crate::provider::{
 };
 
 const RUN_PATH: &str = "/agent.v1.AgentService/Run";
+const SERVER_CONFIG_PATH: &str = "/aiserver.v1.ServerConfigService/GetServerConfig";
 const CLIENT_VERSION: &str = "cli-2026.07.08-0c04a8a";
 
 pub struct CursorProvider {
     config: CursorConfig,
     client: Client,
     stream_idle_timeout: Duration,
+    agent_origin: tokio::sync::OnceCell<String>,
 }
 
 impl CursorProvider {
@@ -50,7 +52,97 @@ impl CursorProvider {
             config,
             client,
             stream_idle_timeout: Duration::from_secs(request_timeout_secs),
+            agent_origin: tokio::sync::OnceCell::new(),
         })
+    }
+
+    fn server_config_headers(access_token: &str) -> Result<HeaderMap, LlmError> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/proto"),
+        );
+        headers.insert(
+            HeaderName::from_static("connect-protocol-version"),
+            HeaderValue::from_static("1"),
+        );
+        headers.insert(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {access_token}")).map_err(|error| {
+                LlmError::RequestFailed {
+                    provider: "cursor".to_string(),
+                    reason: format!("Invalid authorization header: {error}"),
+                }
+            })?,
+        );
+        headers.insert(
+            HeaderName::from_static("x-cursor-client-type"),
+            HeaderValue::from_static("cli"),
+        );
+        headers.insert(
+            HeaderName::from_static("x-cursor-client-version"),
+            HeaderValue::from_static(CLIENT_VERSION),
+        );
+        Ok(headers)
+    }
+
+    async fn resolve_agent_origin(&self, access_token: &str) -> Result<String, LlmError> {
+        self.agent_origin
+            .get_or_try_init(|| async {
+                let url = format!(
+                    "{}{}",
+                    self.config.base_url.trim_end_matches('/'),
+                    SERVER_CONFIG_PATH
+                );
+                let response = self
+                    .client
+                    .post(url)
+                    .headers(Self::server_config_headers(access_token)?)
+                    .body(Vec::new())
+                    .send()
+                    .await
+                    .map_err(|error| {
+                        LlmError::RequestFailed {
+                            provider: "cursor".to_string(),
+                            reason: format!("Cursor GetServerConfig failed: {error}"),
+                        }
+                    })?;
+
+                if response.status() != reqwest::StatusCode::OK {
+                    let status = response.status();
+                    let body = response
+                        .bytes()
+                        .await
+                        .map(|b| b.to_vec())
+                        .unwrap_or_default();
+                    let mut reason = format!("Cursor GetServerConfig HTTP {status}");
+                    let snippet = sanitize_error_body(&body, access_token);
+                    if !snippet.is_empty() {
+                        reason.push_str(": ");
+                        reason.push_str(&snippet);
+                    }
+                    return Err(LlmError::RequestFailed {
+                        provider: "cursor".to_string(),
+                        reason,
+                    });
+                }
+
+                let body = response.bytes().await.map_err(|error| {
+                    LlmError::RequestFailed {
+                        provider: "cursor".to_string(),
+                        reason: format!("Cursor GetServerConfig body: {error}"),
+                    }
+                })?;
+
+                cursor_agent_origin_from_server_config(&body).map_err(|error| {
+                    LlmError::RequestFailed {
+                        provider: "cursor".to_string(),
+                        reason: format!("Cursor GetServerConfig parse error: {error}"),
+                    }
+                })
+            })
+            .await
+            .map(|origin| origin.clone())
     }
 
     fn model_for_request(&self, override_model: Option<&str>) -> String {
@@ -208,11 +300,8 @@ impl CursorProvider {
             system_prompt,
         });
         let access_token = self.access_token().await?;
-        let url = format!(
-            "{}{}",
-            self.config.base_url.trim_end_matches('/'),
-            RUN_PATH
-        );
+        let agent_origin = self.resolve_agent_origin(&access_token).await?;
+        let url = format!("{}{}", agent_origin.trim_end_matches('/'), RUN_PATH);
         let headers = self.run_headers(&access_token)?;
 
         let (body_tx, body_rx) = mpsc::unbounded_channel::<Vec<u8>>();
@@ -260,7 +349,15 @@ impl CursorProvider {
             });
         }
 
+        let content_type = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+            .unwrap_or_default();
+
         let mut frame_buf = Vec::new();
+        let mut raw_body = Vec::new();
         let mut text_buf = String::new();
         let mut thinking_buf = String::new();
         let mut saw_content = false;
@@ -279,6 +376,7 @@ impl CursorProvider {
                 })?;
             match next_chunk {
                 Some(Ok(chunk)) => {
+                    raw_body.extend_from_slice(&chunk);
                     frame_buf.extend_from_slice(&chunk);
                     drain_connect_frames(&mut frame_buf, |payload| {
                         process_server_payload(
@@ -318,15 +416,9 @@ impl CursorProvider {
 
         let visible = visible_text(model_id, &text_buf, &thinking_buf);
         if visible.trim().is_empty() {
-            if saw_content || turn_ended {
-                return Err(LlmError::RequestFailed {
-                    provider: "cursor".to_string(),
-                    reason: "Cursor returned an empty completion".to_string(),
-                });
-            }
             return Err(LlmError::RequestFailed {
                 provider: "cursor".to_string(),
-                reason: "Cursor returned an empty completion".to_string(),
+                reason: empty_completion_reason(&raw_body, &content_type, &access_token),
             });
         }
         Ok(visible)
@@ -338,6 +430,25 @@ fn request_failed(reason: impl Into<String>) -> LlmError {
         provider: "cursor".to_string(),
         reason: reason.into(),
     }
+}
+
+fn empty_completion_reason(body: &[u8], content_type: &str, token: &str) -> String {
+    let len = body.len();
+    if len == 0 {
+        return format!("Cursor returned an empty completion (0 bytes)");
+    }
+    if decode_connect_frames(body).is_err() {
+        let snippet = sanitize_error_body(body, token);
+        let snippet = if snippet.len() > 200 {
+            snippet[..200].to_string()
+        } else {
+            snippet
+        };
+        return format!(
+            "Cursor returned an empty completion ({len} bytes); content-type: {content_type}; body: {snippet}"
+        );
+    }
+    format!("Cursor returned an empty completion ({len} bytes)")
 }
 
 fn sanitize_error_body(body: &[u8], token: &str) -> String {
