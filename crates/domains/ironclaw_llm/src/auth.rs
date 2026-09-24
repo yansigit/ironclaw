@@ -34,6 +34,7 @@ pub enum AuthBackend {
     GithubCopilot,
     Gemini,
     OpenAiCodex,
+    Cursor,
 }
 
 /// Identifies a CLI-style credential file that another tool maintains and
@@ -76,6 +77,10 @@ pub enum LoginRequest {
     /// OpenAI Codex (ChatGPT subscription) device-code login. Tokens are
     /// persisted to disk by `ironclaw_llm`; the caller does not see them.
     OpenAiCodex(OpenAiCodexLoginOptions),
+
+    /// Cursor subscription PKCE login. Returns a browser login URL in
+    /// [`AuthOutcome::display`]; polling completes via `cursor_auth::parse_poll_body`.
+    Cursor,
 }
 
 /// OpenAI Codex login options, mirroring the `OPENAI_CODEX_*` env vars.
@@ -225,6 +230,7 @@ pub async fn start_login(
         LoginRequest::GithubCopilot => start_github_copilot_login(prompt).await,
         LoginRequest::Gemini { credentials_path } => start_gemini_login(&credentials_path).await,
         LoginRequest::OpenAiCodex(opts) => start_openai_codex_login(opts).await,
+        LoginRequest::Cursor => start_cursor_login().await,
     }
 }
 
@@ -237,7 +243,7 @@ pub async fn validate_token(backend: AuthBackend, token: &str) -> Result<(), Aut
                 .await
                 .map_err(|e| AuthError::invalid("github_copilot", e))
         }
-        AuthBackend::Gemini | AuthBackend::OpenAiCodex => {
+        AuthBackend::Gemini | AuthBackend::OpenAiCodex | AuthBackend::Cursor => {
             Err(AuthError::TokenValidationNotSupported { backend })
         }
     }
@@ -247,7 +253,7 @@ pub async fn validate_token(backend: AuthBackend, token: &str) -> Result<(), Aut
 pub fn default_headers(backend: AuthBackend) -> Vec<(String, String)> {
     match backend {
         AuthBackend::GithubCopilot => github_copilot_auth::default_headers(),
-        AuthBackend::Gemini | AuthBackend::OpenAiCodex => Vec::new(),
+        AuthBackend::Gemini | AuthBackend::OpenAiCodex | AuthBackend::Cursor => Vec::new(),
     }
 }
 
@@ -333,4 +339,50 @@ async fn start_openai_codex_login(opts: OpenAiCodexLoginOptions) -> Result<AuthO
         .await
         .map_err(|e| AuthError::login("openai_codex", e))?;
     Ok(AuthOutcome::default())
+}
+
+async fn start_cursor_login() -> Result<AuthOutcome, AuthError> {
+    let params = crate::cursor_auth::generate_cursor_auth_params();
+    Ok(AuthOutcome {
+        token_to_persist: None,
+        display: vec![("login_url".to_string(), params.login_url)],
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct NoopPrompt;
+
+    impl AuthPrompt for NoopPrompt {
+        fn show_device_code(&self, _verification_uri: &str, _user_code: &str) {}
+    }
+
+    #[tokio::test]
+    async fn cursor_start_login_surfaces_login_url_without_verifier() {
+        let outcome = start_login(LoginRequest::Cursor, &NoopPrompt)
+            .await
+            .expect("cursor login");
+        assert!(outcome.token_to_persist.is_none());
+        let login_url = outcome
+            .display
+            .iter()
+            .find(|(key, _)| key == "login_url")
+            .map(|(_, value)| value.as_str())
+            .expect("login_url display entry");
+        assert!(
+            login_url.starts_with("https://cursor.com/loginDeepControl?"),
+            "display should include the Cursor login URL"
+        );
+        assert!(
+            !login_url.contains("verifier="),
+            "display URL must not carry a verifier query param"
+        );
+        let debug = format!("{outcome:?}");
+        assert!(
+            !debug.to_lowercase().contains("verifier"),
+            "Debug output must not mention the PKCE verifier"
+        );
+    }
 }

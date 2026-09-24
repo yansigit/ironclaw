@@ -26,6 +26,7 @@ export function ProviderCard({
   onNearaiLogin,
   onNearaiWallet,
   onCodexLogin,
+  onCursorLogin,
   loginBusy,
   modelEntry,
 }) {
@@ -61,7 +62,8 @@ export function ProviderCard({
         <ModelCapabilityBadges entry={modelEntry} />
       </span>);
 
-  const isLoginProvider = provider.id === "nearai" || provider.id === "openai_codex";
+  const isLoginProvider =
+    provider.id === "nearai" || provider.id === "openai_codex" || provider.id === "cursor";
   const hasApiKey = provider.api_key_set === true || provider.has_api_key === true;
   const configureLabel = provider.builtin
     ? provider.id === "nearai" && acceptsApiKey && !hasApiKey
@@ -102,6 +104,18 @@ export function ProviderCard({
       ? (
           <Button type="button" variant="secondary" size="sm" disabled={loginBusy} onClick={onCodexLogin}>
             {t("onboarding.codexSignIn")}
+          </Button>
+        )
+      : !isActive && provider.id === "cursor"
+      ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={loginBusy}
+            onClick={() => onCursorLogin?.(provider)}
+          >
+            {t("onboarding.signIn")}
           </Button>
         )
       : null;

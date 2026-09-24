@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "vitest";
 
 import type { DynamicTestOptions } from "../../../test-support/dynamic-test-types";
@@ -324,6 +325,7 @@ function createProviderCardHarness() {
         onNearaiLogin: () => {},
         onNearaiWallet: () => {},
         onCodexLogin: () => {},
+        onCursorLogin: () => {},
         loginBusy: false,
         ...props,
       }),
@@ -702,6 +704,25 @@ test("ProviderCard renders login actions instead of generic use for login provid
   templateText = collectTemplateText(rendered);
   assert.ok(labels.includes("onboarding.codexSignIn"));
   assert.ok(!labels.includes("llm.use"));
+
+  rendered = harness.render({
+    activeProviderId: "openai",
+    provider: builtinProvider("cursor", { api_key_required: false, has_api_key: false }),
+  });
+  labels = collectScalars(rendered);
+  assert.ok(labels.includes("onboarding.signIn"));
+  assert.ok(!labels.includes("llm.use"));
+});
+
+test("ProviderCard treats nearai, openai_codex, and cursor as login providers", () => {
+  const source = readFileSync(new URL("./provider-card.tsx", import.meta.url), "utf8");
+  const loginProviderIds = ["nearai", "openai_codex", "cursor"];
+  for (const id of loginProviderIds) {
+    assert.ok(
+      source.includes(`provider.id === "${id}"`),
+      `expected provider-card to recognize ${id} as a login provider`
+    );
+  }
 });
 
 test("ProviderCard renders generic use action for NEAR when an API key is configured", () => {
