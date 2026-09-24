@@ -41,7 +41,7 @@ use ironclaw_auth::product_prompt::{AuthChallengeProvider, auth_prompt_view_for_
 use ironclaw_host_api::failure::categories::CHECKPOINT_REJECTED_CATEGORY;
 use ironclaw_host_api::failure::summary::{
     checkpoint_rejection_host_explanation_from_detail, pinned_failure_summary_for_category,
-    reborn_failure_summary_for_category_and_detail,
+    provider_privacy_summary_from_detail, reborn_failure_summary_for_category_and_detail,
 };
 
 pub(super) const WEBUI_TURN_EVENT_PAGE_LIMIT: usize = 256;
@@ -879,6 +879,9 @@ async fn failure_summary_for_turn_event(
     if category == CHECKPOINT_REJECTED_CATEGORY {
         return checkpoint_rejection_host_explanation_from_detail(detail.as_deref())
             .unwrap_or(fallback_summary);
+    }
+    if let Some(summary) = provider_privacy_summary_from_detail(detail.as_deref()) {
+        return summary.to_string();
     }
     if let Some(summary) = pinned_failure_summary_for_category(category) {
         return summary.to_string();

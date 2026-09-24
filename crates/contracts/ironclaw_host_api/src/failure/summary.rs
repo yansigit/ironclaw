@@ -79,6 +79,23 @@ pub fn checkpoint_rejection_host_explanation_from_detail(detail: Option<&str>) -
     Some(detail.to_string())
 }
 
+const PROVIDER_PRIVACY_GLOBAL_REGIONS_SUMMARY: &str =
+    "This OpenCode Go model requires Global regions. In the OpenCode workspace Privacy settings, select Global, then try again.";
+
+/// Host-authored summary when provider failure detail indicates the OpenCode Go
+/// model requires Global workspace privacy regions.
+pub fn provider_privacy_summary_from_detail(detail: Option<&str>) -> Option<&'static str> {
+    let detail = detail?;
+    if detail
+        .to_ascii_lowercase()
+        .contains("requires global regions")
+    {
+        Some(PROVIDER_PRIVACY_GLOBAL_REGIONS_SUMMARY)
+    } else {
+        None
+    }
+}
+
 pub fn reborn_failure_summary_for_category(category: Option<&str>) -> &'static str {
     let Some(category) = category else {
         return unknown_failure_summary();
@@ -551,6 +568,25 @@ mod tests {
         );
         assert_eq!(
             checkpoint_rejection_host_explanation_from_detail(Some("not an envelope")),
+            None
+        );
+    }
+
+    #[test]
+    fn provider_privacy_summary_from_detail_reads_global_regions() {
+        const EXPECTED: &str = "This OpenCode Go model requires Global regions. In the OpenCode workspace Privacy settings, select Global, then try again.";
+        const LIVE_DETAIL: &str = "Provider opencode_go rejected the request: HTTP 400: {\"error\":{\"type\":\"server_error\",\"message\":\"Upstream request failed: This Go model requires Global regions. Select Global in your workspace's Privacy settings to use it.\"}}";
+
+        assert_eq!(
+            provider_privacy_summary_from_detail(Some(LIVE_DETAIL)),
+            Some(EXPECTED)
+        );
+        assert_eq!(provider_privacy_summary_from_detail(None), None);
+        assert_eq!(provider_privacy_summary_from_detail(Some("")), None);
+        assert_eq!(
+            provider_privacy_summary_from_detail(Some(
+                "The latest version of this model is only available hosted in China"
+            )),
             None
         );
     }
