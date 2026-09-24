@@ -32,6 +32,7 @@ use crate::provider::{
 const RUN_PATH: &str = "/agent.v1.AgentService/Run";
 const SERVER_CONFIG_PATH: &str = "/aiserver.v1.ServerConfigService/GetServerConfig";
 const CLIENT_VERSION: &str = "cli-2026.07.08-0c04a8a";
+const MAX_ERROR_BODY_BYTES: usize = 4096;
 
 pub struct CursorProvider {
     config: CursorConfig,
@@ -87,6 +88,7 @@ impl CursorProvider {
     }
 
     async fn resolve_agent_origin(&self, access_token: &str) -> Result<String, LlmError> {
+        let idle = self.stream_idle_timeout;
         self.agent_origin
             .get_or_try_init(|| async {
                 let url = format!(
@@ -94,26 +96,38 @@ impl CursorProvider {
                     self.config.base_url.trim_end_matches('/'),
                     SERVER_CONFIG_PATH
                 );
-                let response = self
-                    .client
-                    .post(url)
-                    .headers(Self::server_config_headers(access_token)?)
-                    .body(Vec::new())
-                    .send()
-                    .await
-                    .map_err(|error| {
-                        LlmError::RequestFailed {
-                            provider: "cursor".to_string(),
-                            reason: format!("Cursor GetServerConfig failed: {error}"),
-                        }
-                    })?;
+                let response = tokio::time::timeout(
+                    idle,
+                    self.client
+                        .post(url)
+                        .headers(Self::server_config_headers(access_token)?)
+                        .body(Vec::new())
+                        .send(),
+                )
+                .await
+                .map_err(|_| {
+                    LlmError::RequestFailed {
+                        provider: "cursor".to_string(),
+                        reason: "GetServerConfig headers timed out".to_string(),
+                    }
+                })?
+                .map_err(|error| {
+                    LlmError::RequestFailed {
+                        provider: "cursor".to_string(),
+                        reason: format!("Cursor GetServerConfig failed: {error}"),
+                    }
+                })?;
 
                 if response.status() != reqwest::StatusCode::OK {
                     let status = response.status();
-                    let body = response
-                        .bytes()
+                    let body = tokio::time::timeout(idle, read_limited_error_body(response))
                         .await
-                        .map(|b| b.to_vec())
+                        .map_err(|_| {
+                            LlmError::RequestFailed {
+                                provider: "cursor".to_string(),
+                                reason: "GetServerConfig body timed out".to_string(),
+                            }
+                        })?
                         .unwrap_or_default();
                     let mut reason = format!("Cursor GetServerConfig HTTP {status}");
                     let snippet = sanitize_error_body(&body, access_token);
@@ -127,12 +141,20 @@ impl CursorProvider {
                     });
                 }
 
-                let body = response.bytes().await.map_err(|error| {
-                    LlmError::RequestFailed {
-                        provider: "cursor".to_string(),
-                        reason: format!("Cursor GetServerConfig body: {error}"),
-                    }
-                })?;
+                let body = tokio::time::timeout(idle, response.bytes())
+                    .await
+                    .map_err(|_| {
+                        LlmError::RequestFailed {
+                            provider: "cursor".to_string(),
+                            reason: "GetServerConfig body timed out".to_string(),
+                        }
+                    })?
+                    .map_err(|error| {
+                        LlmError::RequestFailed {
+                            provider: "cursor".to_string(),
+                            reason: format!("Cursor GetServerConfig body: {error}"),
+                        }
+                    })?;
 
                 cursor_agent_origin_from_server_config(&body).map_err(|error| {
                     LlmError::RequestFailed {
@@ -316,27 +338,38 @@ impl CursorProvider {
             }
         }));
 
-        let response = self
-            .client
-            .post(url)
-            .headers(headers)
-            .body(request_body)
-            .send()
-            .await
-            .map_err(|error| {
-                LlmError::RequestFailed {
-                    provider: "cursor".to_string(),
-                    reason: error.to_string(),
-                }
-            })?;
+        let response = tokio::time::timeout(
+            self.stream_idle_timeout,
+            self.client
+                .post(url)
+                .headers(headers)
+                .body(request_body)
+                .send(),
+        )
+        .await
+        .map_err(|_| {
+            LlmError::RequestFailed {
+                provider: "cursor".to_string(),
+                reason: "Run headers timed out".to_string(),
+            }
+        })?
+        .map_err(|error| {
+            LlmError::RequestFailed {
+                provider: "cursor".to_string(),
+                reason: error.to_string(),
+            }
+        })?;
 
         if response.status() != reqwest::StatusCode::OK {
             let status = response.status();
-            let body = response
-                .bytes()
-                .await
-                .map(|b| b.to_vec())
-                .unwrap_or_default();
+            let body = tokio::time::timeout(
+                self.stream_idle_timeout,
+                read_limited_error_body(response),
+            )
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .unwrap_or_default();
             let mut reason = format!("HTTP {status}");
             let snippet = sanitize_error_body(&body, &access_token);
             if !snippet.is_empty() {
@@ -432,18 +465,46 @@ fn request_failed(reason: impl Into<String>) -> LlmError {
     }
 }
 
+fn truncate_str_at_byte_boundary(s: &str, max_bytes: usize) -> String {
+    if s.len() <= max_bytes {
+        return s.to_string();
+    }
+    let end = s.floor_char_boundary(max_bytes);
+    s[..end].to_string()
+}
+
+async fn read_limited_error_body(
+    response: reqwest::Response,
+) -> Result<Vec<u8>, reqwest::Error> {
+    let capacity = response
+        .content_length()
+        .and_then(|length| usize::try_from(length).ok())
+        .unwrap_or_default()
+        .min(MAX_ERROR_BODY_BYTES);
+    let mut body = Vec::with_capacity(capacity);
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        let remaining = MAX_ERROR_BODY_BYTES.saturating_sub(body.len());
+        if remaining == 0 {
+            break;
+        }
+        if chunk.len() >= remaining {
+            body.extend_from_slice(&chunk[..remaining]);
+            break;
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
 fn empty_completion_reason(body: &[u8], content_type: &str, token: &str) -> String {
     let len = body.len();
     if len == 0 {
         return format!("Cursor returned an empty completion (0 bytes)");
     }
     if decode_connect_frames(body).is_err() {
-        let snippet = sanitize_error_body(body, token);
-        let snippet = if snippet.len() > 200 {
-            snippet[..200].to_string()
-        } else {
-            snippet
-        };
+        let snippet = truncate_str_at_byte_boundary(&sanitize_error_body(body, token), 200);
         return format!(
             "Cursor returned an empty completion ({len} bytes); content-type: {content_type}; body: {snippet}"
         );
@@ -458,11 +519,7 @@ fn sanitize_error_body(body: &[u8], token: &str) -> String {
     } else {
         text.replace(token, "[REDACTED]")
     };
-    if redacted.len() > 500 {
-        redacted[..500].to_string()
-    } else {
-        redacted
-    }
+    truncate_str_at_byte_boundary(&redacted, 500)
 }
 
 fn visible_text(model_id: &str, text_buf: &str, thinking_buf: &str) -> String {
@@ -700,6 +757,17 @@ mod tests {
     use super::*;
     use crate::cursor_wire::protobuf_string_path;
     use crate::provider::{ChatMessage, CompletionRequest};
+
+    #[test]
+    fn sanitize_error_body_truncates_on_char_boundary_and_redacts_token() {
+        let token = "cursor-secret-token";
+        // Token first so truncation at byte 500 still leaves [REDACTED]; emoji spans bytes 497–500.
+        let body = format!("{}{}{}zzzzzz", token, "a".repeat(484), "🀀");
+        let result = sanitize_error_body(body.as_bytes(), token);
+        assert!(!result.contains(token));
+        assert!(result.contains("[REDACTED]"));
+        assert!(result.len() <= 500);
+    }
 
     #[test]
     fn shell_server_frame_is_rejected() {
