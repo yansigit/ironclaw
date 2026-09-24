@@ -31,6 +31,18 @@ pub fn wire_for_model(model: &str) -> OpenCodeGoWire {
     }
 }
 
+/// DeepSeek's chat endpoint rejects `response_format.type = json_schema` with
+/// HTTP 400 `This response_format type is unavailable now`. `json_object`
+/// still requests JSON; the host prompt carries the schema.
+fn wire_response_format(model: &str, format: &CompletionResponseFormat) -> serde_json::Value {
+    if model.to_ascii_lowercase().contains("deepseek")
+        && matches!(format, CompletionResponseFormat::JsonSchema(_))
+    {
+        return serde_json::json!({"type": "json_object"});
+    }
+    openai_json_schema_response_format(format.clone())
+}
+
 pub fn session_header_value(lane: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"ironclaw/opencode-go/session/v1\0");
@@ -193,7 +205,7 @@ impl OpenCodeGoProvider {
             body["stop"] = serde_json::json!(stop);
         }
         if let Some(format) = response_format {
-            body["response_format"] = openai_json_schema_response_format(format.clone());
+            body["response_format"] = wire_response_format(model, format);
         }
         if !tools.is_empty() {
             body["tools"] = serde_json::Value::Array(
@@ -526,6 +538,44 @@ mod tests {
     }
 
     #[test]
+    fn deepseek_json_schema_is_sent_as_json_object() {
+        use crate::JsonSchemaResponseFormat;
+
+        let format = CompletionResponseFormat::JsonSchema(JsonSchemaResponseFormat::strict(
+            "suggestions",
+            serde_json::json!({"type": "object"}),
+        ));
+        let body = OpenCodeGoProvider::body(
+            "deepseek-flash",
+            &[],
+            &[],
+            None,
+            None,
+            None,
+            Some(&format),
+            None,
+        )
+        .expect("body");
+        assert_eq!(
+            body["response_format"],
+            serde_json::json!({"type": "json_object"})
+        );
+
+        let kept = OpenCodeGoProvider::body(
+            "kimi-k2.7-code",
+            &[],
+            &[],
+            None,
+            None,
+            None,
+            Some(&format),
+            None,
+        )
+        .expect("body");
+        assert_eq!(kept["response_format"]["type"], "json_schema");
+    }
+
+    #[test]
     fn debug_redacts_the_api_key() {
         let debug = format!(
             "{:?}",
@@ -652,22 +702,117 @@ mod tests {
         let _raw = server.await.unwrap();
     }
 
+    fn live_provider(model: Option<&str>) -> OpenCodeGoProvider {
+        let key = std::env::var("OPENCODE_API_KEY").expect("OPENCODE_API_KEY");
+        OpenCodeGoProvider::new(
+            OpenCodeGoConfig::build(
+                model.map(str::to_string),
+                None,
+                Some(SecretString::from(key)),
+            ),
+            120,
+        )
+        .expect("provider")
+    }
+
     #[tokio::test]
     #[ignore = "calls OpenCode Go; requires OPENCODE_API_KEY"]
-    async fn live_kimi_smoke() {
-        let key = std::env::var("OPENCODE_API_KEY").expect("OPENCODE_API_KEY");
-        let provider = OpenCodeGoProvider::new(
-            crate::config::OpenCodeGoConfig::build(None, None, Some(SecretString::from(key))),
-            60,
-        )
-        .unwrap();
-        let response = provider
+    async fn live_mimo_smoke() {
+        let response = live_provider(Some("mimo-v2.6-flash"))
             .complete(crate::provider::CompletionRequest::new(vec![
                 crate::provider::ChatMessage::user("Reply with the single word pong"),
             ]))
             .await
-            .unwrap();
+            .expect("mimo completion");
         assert!(!response.content.trim().is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore = "calls OpenCode Go; requires OPENCODE_API_KEY"]
+    async fn live_list_models() {
+        let models = live_provider(None).list_models().await.expect("list models");
+        assert!(models.iter().any(|id| id == "mimo-v2.6-flash"));
+        assert!(models.iter().any(|id| id == "deepseek-flash"));
+    }
+
+    #[tokio::test]
+    #[ignore = "calls OpenCode Go; requires OPENCODE_API_KEY"]
+    async fn live_deepseek_flash_smoke() {
+        let response = live_provider(Some("deepseek-flash"))
+            .complete(
+                crate::provider::CompletionRequest::new(vec![
+                    crate::provider::ChatMessage::user("Reply with the single word pong"),
+                ])
+                .with_max_tokens(32),
+            )
+            .await
+            .expect("deepseek completion");
+        assert!(
+            response.content.to_ascii_lowercase().contains("pong"),
+            "completion was empty or did not contain pong"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "calls OpenCode Go; requires OPENCODE_API_KEY"]
+    async fn live_deepseek_json_schema_regression() {
+        use crate::JsonSchemaResponseFormat;
+
+        let mut request = crate::provider::CompletionRequest::new(vec![
+            crate::provider::ChatMessage::user(
+                "Return JSON with boolean field pong set to true.",
+            ),
+        ])
+        .with_model("deepseek-flash")
+        .with_max_tokens(64);
+        request.response_format = Some(CompletionResponseFormat::JsonSchema(
+            JsonSchemaResponseFormat::strict(
+                "pong_check",
+                serde_json::json!({
+                    "type": "object",
+                    "properties": { "pong": { "type": "boolean" } },
+                    "required": ["pong"],
+                    "additionalProperties": false
+                }),
+            ),
+        ));
+        let response = live_provider(Some("deepseek-flash"))
+            .complete(request)
+            .await
+            .expect("deepseek json schema completion");
+        let parsed: serde_json::Value =
+            serde_json::from_str(response.content.trim()).expect("json object body");
+        assert_eq!(parsed["pong"], true);
+    }
+
+    #[tokio::test]
+    #[ignore = "calls OpenCode Go; requires OPENCODE_API_KEY"]
+    async fn live_deepseek_tool_call() {
+        let request = ToolCompletionRequest::new(
+            vec![crate::provider::ChatMessage::user(
+                "Call the echo tool with text pong.",
+            )],
+            vec![ToolDefinition {
+                name: "echo".to_string(),
+                description: "Echo a short string".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": { "text": { "type": "string" } },
+                    "required": ["text"],
+                    "additionalProperties": false
+                }),
+            }],
+        )
+        .with_model("deepseek-flash")
+        .with_max_tokens(128)
+        .with_tool_choice("auto");
+        let response = live_provider(Some("deepseek-flash"))
+            .complete_with_tools(request)
+            .await
+            .expect("deepseek tool completion");
+        assert_eq!(response.tool_calls.len(), 1);
+        assert_eq!(response.tool_calls[0].name, "echo");
+        assert_eq!(response.tool_calls[0].arguments["text"], "pong");
     }
 
     #[tokio::test]
