@@ -4703,6 +4703,7 @@ dependencies = [
  "chrono",
  "dirs",
  "eventsource-stream",
+ "flate2",
  "futures",
  "hex",
  "insta",

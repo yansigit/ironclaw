@@ -19,6 +19,7 @@ mod bedrock;
 pub mod circuit_breaker;
 pub(crate) mod codex_auth;
 mod codex_chatgpt;
+mod cursor_wire;
 pub mod config;
 pub mod error;
 pub mod failover;
