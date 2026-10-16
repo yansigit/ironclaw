@@ -116,6 +116,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          retention-days: 7
           name: live-canary-auth-smoke
           path: artifacts/live-canary/
           if-no-files-found: ignore
@@ -147,6 +148,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          retention-days: 7
           name: live-canary-auth-full
           path: artifacts/live-canary/
           if-no-files-found: ignore
@@ -178,6 +180,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          retention-days: 7
           name: live-canary-auth-channels
           path: artifacts/live-canary/
           if-no-files-found: ignore
@@ -267,6 +270,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          retention-days: 7
           name: live-canary-auth-live-seeded
           path: artifacts/live-canary/
           if-no-files-found: ignore
@@ -368,6 +372,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          retention-days: 7
           name: live-canary-auth-browser-consent
           path: artifacts/live-canary/
           if-no-files-found: ignore
@@ -433,6 +438,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          retention-days: 7
           name: live-canary-workflow-canary
           path: artifacts/live-canary/
           if-no-files-found: ignore
@@ -486,7 +492,7 @@ jobs:
         with:
           name: live-canary-deterministic-replay
           path: artifacts/live-canary/
-          retention-days: 14
+          retention-days: 7
 
   public-smoke:
     name: Public Live Smoke
@@ -540,7 +546,7 @@ jobs:
         with:
           name: live-canary-public-smoke
           path: artifacts/live-canary/
-          retention-days: 14
+          retention-days: 7
 
   approve-reborn-webui-v2-pr-live-qa:
     name: Approve PR code for Reborn WebUI v2 live QA
@@ -1208,7 +1214,7 @@ jobs:
             artifacts/live-canary/
             !artifacts/live-canary/**/llm-traces/**
           if-no-files-found: ignore
-          retention-days: 14
+          retention-days: 7
 
   persona-rotating:
     name: Rotating Persona Live
@@ -1275,7 +1281,7 @@ jobs:
         with:
           name: live-canary-persona-rotating
           path: artifacts/live-canary/
-          retention-days: 14
+          retention-days: 7
 
   private-oauth:
     name: Private OAuth Live
@@ -1387,7 +1393,7 @@ jobs:
         with:
           name: live-canary-release-public-full
           path: artifacts/live-canary/
-          retention-days: 30
+          retention-days: 7
 
   upgrade-canary:
     name: Upgrade Canary
@@ -1435,7 +1441,7 @@ jobs:
         with:
           name: live-canary-upgrade
           path: artifacts/live-canary/
-          retention-days: 30
+          retention-days: 7
 
   canary-report:
     name: Canary Report
