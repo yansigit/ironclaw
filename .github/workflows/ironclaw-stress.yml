@@ -120,6 +120,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          retention-days: 7
           name: ironclaw-stress-libsql-suite
           path: |
             target/ironclaw-stress/pr-suite.jsonl
@@ -171,6 +172,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          retention-days: 7
           name: ironclaw-stress-libsql-ramp
           path: |
             target/ironclaw-stress/concurrency-ramp-summary.json
@@ -214,7 +216,7 @@ jobs:
             target/ironclaw-stress/soak-summary.json
             target/ironclaw-stress/soak-report.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
   libsql-scripted-memory:
     name: libsql scripted memory matrix
@@ -380,7 +382,7 @@ jobs:
             target/ironclaw-stress/ironclaw-stress-libsql-scripted-memory_roundtrip/summary.json
             target/ironclaw-stress/ironclaw-stress-libsql-scripted-memory_roundtrip/report.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
       - name: Upload libsql scripted memory_grow artifacts
         if: always()
@@ -392,7 +394,7 @@ jobs:
             target/ironclaw-stress/ironclaw-stress-libsql-scripted-memory_grow/summary.json
             target/ironclaw-stress/ironclaw-stress-libsql-scripted-memory_grow/report.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
       - name: Upload libsql scripted memory_mixed artifacts
         if: always()
@@ -404,7 +406,7 @@ jobs:
             target/ironclaw-stress/ironclaw-stress-libsql-scripted-memory_mixed/summary.json
             target/ironclaw-stress/ironclaw-stress-libsql-scripted-memory_mixed/report.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
       - name: Upload libsql scripted server log
         if: always()
@@ -414,7 +416,7 @@ jobs:
           path: |
             target/ironclaw-stress/libsql-scripted-server.log
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
   postgres-api-capacity:
     name: hosted-single-tenant Postgres API capacity
@@ -617,6 +619,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          retention-days: 7
           name: ironclaw-stress-postgres-api-capacity
           path: |
             target/ironclaw-stress/postgres-api-server.log
@@ -638,4 +641,4 @@ jobs:
             target/ironclaw-stress/postgres-api-scripted-summary.json
             target/ironclaw-stress/postgres-api-scripted-report.txt
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7

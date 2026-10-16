@@ -588,6 +588,7 @@ jobs:
         if: needs.changes.outputs.run_coverage == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          retention-days: 7
           name: reborn-crate-cov-bucket-${{ matrix.bucket.name }}
           path: bucket-${{ matrix.bucket.name }}.lcov
           if-no-files-found: error
@@ -885,6 +886,7 @@ jobs:
         if: needs.changes.outputs.run_coverage == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          retention-days: 7
           name: reborn-integration-cov-part-${{ matrix.batch.id }}
           path: part-${{ matrix.batch.id }}.lcov
           if-no-files-found: error
@@ -1026,6 +1028,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
+          retention-days: 7
           name: reborn-integration-coverage-merged
           path: |
             reborn-integration-merged.lcov

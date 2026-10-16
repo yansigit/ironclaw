@@ -70,6 +70,7 @@ jobs:
       - name: Cache dist
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
+          retention-days: 7
           name: cargo-dist-cache
           path: ~/.cargo/bin/dist
       # sure would be cool if github gave us proper conditionals...
@@ -86,6 +87,7 @@ jobs:
       - name: "Upload dist-manifest.json"
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
+          retention-days: 7
           name: artifacts-plan-dist-manifest
           path: plan-dist-manifest.json
 
@@ -206,6 +208,7 @@ jobs:
       - name: "Upload artifacts"
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
+          retention-days: 7
           name: artifacts-build-local-${{ join(matrix.targets, '_') }}
           path: |
             ${{ steps.cargo-dist.outputs.paths }}
@@ -253,6 +256,7 @@ jobs:
       - name: "Upload artifacts"
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
+          retention-days: 7
           name: artifacts-build-global
           path: |
             ${{ steps.cargo-dist.outputs.paths }}
@@ -302,6 +306,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           # Overwrite the previous copy
+          retention-days: 7
           name: artifacts-dist-manifest
           path: dist-manifest.json
       # Create a GitHub Release while uploading all files to it
